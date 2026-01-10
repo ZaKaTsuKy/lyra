@@ -152,6 +152,13 @@ function run_monitor()
             rethrow(e)
         end
     finally
+        # Graceful WebSocket shutdown
+        try
+            stop_server!()
+        catch e
+            @debug "Error stopping server" exception = e
+        end
+
         # Always show cursor on exit
         show_cursor()
         println("\nOmni Monitor stopped.")

@@ -22,6 +22,14 @@ const MAX_CLIENTS = 50
 const SEND_TIMEOUT_SEC = 5.0
 const ALLOWED_ORIGINS = Ref{Vector{String}}(["*"])
 
+# Security limits
+const MAX_MESSAGE_SIZE = 1024        # 1KB max incoming message
+const RATE_LIMIT_WINDOW_SEC = 1.0    # Rate limit window
+const RATE_LIMIT_MAX_MESSAGES = 10   # Max messages per window
+
+# Server state for graceful shutdown
+const SERVER_RUNNING = Ref{Bool}(true)
+
 """Set allowed CORS origins. Use ["*"] for dev, specific origins for prod."""
 function set_allowed_origins!(origins::Vector{String})
     ALLOWED_ORIGINS[] = origins
@@ -219,13 +227,22 @@ StructTypes.StructType(::Type{Union{Nothing,GPUInstant}}) = StructTypes.Struct()
 # CLIENT MANAGEMENT (Thread-Safe)
 # ============================
 
-"""Thread-safe WebSocket client manager with limits"""
+"""Per-client rate limiting state"""
+mutable struct ClientState
+    ws::HTTP.WebSockets.WebSocket
+    message_count::Int
+    window_start::Float64
+end
+
+ClientState(ws) = ClientState(ws, 0, time())
+
+"""Thread-safe WebSocket client manager with limits and rate tracking"""
 mutable struct WebSocketClients
-    clients::Set{HTTP.WebSockets.WebSocket}
+    clients::Dict{HTTP.WebSockets.WebSocket,ClientState}
     lock::ReentrantLock
 end
 
-WebSocketClients() = WebSocketClients(Set{HTTP.WebSockets.WebSocket}(), ReentrantLock())
+WebSocketClients() = WebSocketClients(Dict{HTTP.WebSockets.WebSocket,ClientState}(), ReentrantLock())
 
 const CLIENTS = WebSocketClients()
 
@@ -239,7 +256,7 @@ function add_client!(ws::HTTP.WebSockets.WebSocket)::Bool
             @warn "Client rejected: MAX_CLIENTS ($MAX_CLIENTS) reached"
             return false
         end
-        push!(CLIENTS.clients, ws)
+        CLIENTS.clients[ws] = ClientState(ws)
         return true
     end
 end
@@ -252,13 +269,41 @@ end
 
 function get_clients()::Vector{HTTP.WebSockets.WebSocket}
     lock(CLIENTS.lock) do
-        collect(CLIENTS.clients)
+        collect(keys(CLIENTS.clients))
     end
 end
 
 function get_client_count()::Int
     lock(CLIENTS.lock) do
         length(CLIENTS.clients)
+    end
+end
+
+"""
+Check rate limit for client. Returns true if allowed, false if rate exceeded.
+Also updates the rate counter.
+"""
+function check_rate_limit!(ws::HTTP.WebSockets.WebSocket)::Bool
+    lock(CLIENTS.lock) do
+        state = get(CLIENTS.clients, ws, nothing)
+        state === nothing && return false
+
+        now = time()
+
+        # Reset window if expired
+        if now - state.window_start >= RATE_LIMIT_WINDOW_SEC
+            state.message_count = 0
+            state.window_start = now
+        end
+
+        state.message_count += 1
+
+        if state.message_count > RATE_LIMIT_MAX_MESSAGES
+            @warn "Rate limit exceeded: $(state.message_count) messages in $(RATE_LIMIT_WINDOW_SEC)s"
+            return false
+        end
+
+        return true
     end
 end
 
@@ -541,6 +586,16 @@ function start_websocket_server!(port::Int=8080)
 
     # WebSocket endpoint
     @websocket "/ws" function (ws::HTTP.WebSockets.WebSocket)
+        # Check server state
+        if !SERVER_RUNNING[]
+            try
+                HTTP.WebSockets.send(ws, """{"type":"error","message":"Server shutting down"}""")
+            catch
+            end
+            safe_close(ws)
+            return
+        end
+
         # Check client limit
         if !add_client!(ws)
             # Reject: send error and close
@@ -565,9 +620,24 @@ function start_websocket_server!(port::Int=8080)
             end
 
             # Keep connection alive, listen for client messages
-            while !eof(ws)
+            while !eof(ws) && SERVER_RUNNING[]
                 try
                     msg = HTTP.WebSockets.receive(ws)
+
+                    # Message size limit check
+                    if length(msg) > MAX_MESSAGE_SIZE
+                        @warn "Message too large: $(length(msg)) bytes (max: $MAX_MESSAGE_SIZE)"
+                        safe_send(ws, """{"type":"error","message":"Message too large"}""")
+                        break  # Close connection
+                    end
+
+                    # Rate limit check
+                    if !check_rate_limit!(ws)
+                        safe_send(ws, """{"type":"error","message":"Rate limit exceeded"}""")
+                        break  # Close connection
+                    end
+
+                    # Handle valid messages
                     if msg == "ping"
                         safe_send(ws, "pong")
                     end
@@ -649,4 +719,39 @@ end
 function broadcast_update!(monitor::SystemMonitor)
     snapshot = create_snapshot(monitor)
     broadcast_async!(snapshot)
+end
+
+# ============================
+# GRACEFUL SHUTDOWN
+# ============================
+
+"""
+Gracefully shutdown the WebSocket server.
+Sends close frame (1001 Going Away) to all clients.
+"""
+function stop_server!()
+    @info "Initiating graceful shutdown..."
+
+    # Mark server as stopping
+    SERVER_RUNNING[] = false
+
+    # Get all clients
+    clients = get_clients()
+
+    @info "Closing $(length(clients)) client connections..."
+
+    # Send close message to all clients
+    for ws in clients
+        try
+            # Send shutdown notification
+            safe_send(ws, """{"type":"shutdown","message":"Server shutting down"}""")
+            # Close with 1001 Going Away
+            HTTP.WebSockets.close(ws, HTTP.WebSockets.CloseFrameBody(1001, "Server shutting down"))
+        catch e
+            @debug "Error closing client" exception = e
+        end
+        remove_client!(ws)
+    end
+
+    @info "All clients disconnected. Server stopped."
 end
