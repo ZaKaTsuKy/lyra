@@ -22,7 +22,6 @@
 9. [Personnalisation](#personnalisation)
 10. [Dépannage](#dépannage)
 11. [Roadmap](#roadmap)
-12. [Contribution](#contribution)
 
 ---
 
