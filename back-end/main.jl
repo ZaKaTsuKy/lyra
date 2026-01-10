@@ -10,10 +10,13 @@
 using Dates
 using Printf
 using Statistics: mean
+using DotEnv
 
 # ============================
 # LOAD MODULES
 # ============================
+
+DotEnv.config()
 
 # Centralized configuration (must be first)
 include("config/Config.jl")
