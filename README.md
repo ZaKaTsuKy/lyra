@@ -2,7 +2,7 @@
 
 ## Dashboard de Monitoring Système avec Intelligence Artificielle
 
-**Version:** 3.0  
+**Version:** 0.1.0  
 **Langage:** Julia 1.9+  
 **Plateforme:** Linux (avec architecture préparée pour Windows/macOS)  
 **Licence:** MIT
