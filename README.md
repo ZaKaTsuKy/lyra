@@ -1,5 +1,4 @@
-# OMNI MONITOR
-
+# LYRA
 ## Dashboard de Monitoring Système avec Intelligence Artificielle
 
 **Version:** 0.1.0  
@@ -29,7 +28,7 @@
 
 ### Vision
 
-OMNI MONITOR est un dashboard de monitoring système en temps réel qui se distingue par son **moteur d'intelligence artificielle statistique** intégré. Contrairement aux outils de monitoring traditionnels qui se contentent d'afficher des métriques brutes, OMNI MONITOR analyse en continu le comportement du système pour :
+LYRA est un dashboard de monitoring système en temps réel qui se distingue par son **moteur d'intelligence artificielle statistique** intégré. Contrairement aux outils de monitoring traditionnels qui se contentent d'afficher des métriques brutes, LYRA analyse en continu le comportement du système pour :
 
 - **Détecter les anomalies** avant qu'elles ne deviennent des problèmes
 - **Prédire les situations critiques** (mémoire pleine, surchauffe, saturation disque)
