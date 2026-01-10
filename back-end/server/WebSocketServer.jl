@@ -663,32 +663,36 @@ function start_websocket_server!(port::Int=8080)
             end
 
             # Keep connection alive, listen for client messages
-            while !eof(ws) && SERVER_RUNNING[]
+            # Note: HTTP.jl WebSocket doesn't have eof() or isopen()
+            # Use infinite loop with exception-based termination
+            while SERVER_RUNNING[]
+                local msg
                 try
                     msg = HTTP.WebSockets.receive(ws)
-
-                    # Message size limit check
-                    if length(msg) > get_max_message_size()
-                        @warn "Message too large: $(length(msg)) bytes (max: $(get_max_message_size()))"
-                        safe_send(ws, """{"type":"error","message":"Message too large"}""")
-                        break  # Close connection
-                    end
-
-                    # Rate limit check
-                    if !check_rate_limit!(ws)
-                        safe_send(ws, """{"type":"error","message":"Rate limit exceeded"}""")
-                        break  # Close connection
-                    end
-
-                    # Handle valid messages
-                    if msg == "ping"
-                        safe_send(ws, "pong")
-                    end
                 catch e
+                    # Connection closed (normal) or error
                     if !(e isa EOFError || e isa HTTP.WebSockets.WebSocketError)
-                        @warn "WebSocket receive error" exception = e
+                        @debug "WebSocket closed" exception = e
                     end
                     break
+                end
+
+                # Message size limit check
+                if length(msg) > get_max_message_size()
+                    @warn "Message too large: $(length(msg)) bytes (max: $(get_max_message_size()))"
+                    safe_send(ws, """{"type":"error","message":"Message too large"}""")
+                    break  # Close connection
+                end
+
+                # Rate limit check
+                if !check_rate_limit!(ws)
+                    safe_send(ws, """{"type":"error","message":"Rate limit exceeded"}""")
+                    break  # Close connection
+                end
+
+                # Handle valid messages
+                if msg == "ping"
+                    safe_send(ws, "pong")
                 end
             end
         catch e
