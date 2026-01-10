@@ -141,6 +141,11 @@ struct DiskInstant
     percent::Float64
     read_bps::Float64
     write_bps::Float64
+    # IOPS and latency metrics
+    read_iops::Float64
+    write_iops::Float64
+    avg_wait_ms::Float64
+    io_wait_pct::Float64
 end
 
 StructTypes.StructType(::Type{DiskInstant}) = StructTypes.Struct()
@@ -170,6 +175,15 @@ end
 
 StructTypes.StructType(::Type{SystemInstant}) = StructTypes.Struct()
 
+"""Prediction DTO for AI time-to-critical predictions"""
+struct PredictionDTO
+    metric::String
+    time_to_critical_sec::Float64
+    confidence::Float64
+end
+
+StructTypes.StructType(::Type{PredictionDTO}) = StructTypes.Struct()
+
 """Anomaly instant values (immutable deep copy)"""
 struct AnomalyInstant
     cpu::Float64
@@ -184,6 +198,18 @@ struct AnomalyInstant
     mem_spike::Bool
     io_spike::Bool
     net_spike::Bool
+    # Per-metric trends
+    cpu_trend::String
+    mem_trend::String
+    io_trend::String
+    net_trend::String
+    # Regime detection
+    regime::String
+    # AI predictions
+    predictions::Vector{PredictionDTO}
+    # Coherence alerts
+    coherence_temp_alert::Bool
+    coherence_io_alert::Bool
 end
 
 StructTypes.StructType(::Type{AnomalyInstant}) = StructTypes.Struct()
@@ -439,16 +465,24 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         Int(n.tcp.time_wait)
     )
 
-    # Disks - create new immutable structs
+    # Disks - create new immutable structs with IO metrics
     disks = [
-        DiskInstant(
-            String(d.mount),
-            Float64(d.used_gb),
-            Float64(d.avail_gb),
-            Float64(d.percent),
-            Float64(d.read_bps),
-            Float64(d.write_bps)
-        )
+        begin
+            # Find matching IO metrics by mount point
+            io_data = get(monitor.disk_io, d.mount, nothing)
+            DiskInstant(
+                String(d.mount),
+                Float64(d.used_gb),
+                Float64(d.avail_gb),
+                Float64(d.percent),
+                Float64(d.read_bps),
+                Float64(d.write_bps),
+                io_data !== nothing ? Float64(io_data.read_iops) : 0.0,
+                io_data !== nothing ? Float64(io_data.write_iops) : 0.0,
+                io_data !== nothing ? Float64(io_data.avg_wait_ms) : 0.0,
+                io_data !== nothing ? Float64(io_data.io_wait_pct) : 0.0
+            )
+        end
         for d in monitor.disks
     ]
 
@@ -475,8 +509,9 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         Int(s.procs_blocked)
     )
 
-    # Anomaly - copy all values
+    # Anomaly - copy all values with AI enrichment
     a = monitor.anomaly
+    ai_state = get_ai_state()
     anomaly = AnomalyInstant(
         Float64(a.cpu),
         Float64(a.mem),
@@ -489,7 +524,20 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         Bool(a.cpu_spike),
         Bool(a.mem_spike),
         Bool(a.io_spike),
-        Bool(a.net_spike)
+        Bool(a.net_spike),
+        # Per-metric trends
+        String(a.cpu_trend),
+        String(a.mem_trend),
+        String(a.io_trend),
+        String(a.net_trend),
+        # Regime from AI state
+        String(get_current_regime()),
+        # Predictions
+        [PredictionDTO(String(p.metric), Float64(p.time_to_critical_sec), Float64(p.confidence))
+         for p in a.predictions],
+        # Coherence alerts
+        Bool(ai_state.coherence.temp_without_load),
+        Bool(ai_state.coherence.latency_without_io)
     )
 
     # Top 5 processes - deep copy
