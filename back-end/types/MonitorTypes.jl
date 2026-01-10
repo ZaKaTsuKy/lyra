@@ -257,19 +257,19 @@ mutable struct CPUInfo
     interrupts_ps::Float64       # Per second rate
 end
 
-CPUInfo() = CPUInfo("", "", 0.0, 0.0, 0.0, String[], 0.0, 0.0, 0.0, 0, 0, 0.0, 
-                    CPUTemperature(), 0.0, 0.0)
+CPUInfo() = CPUInfo("", "", 0.0, 0.0, 0.0, String[], 0.0, 0.0, 0.0, 0, 0, 0.0,
+    CPUTemperature(), 0.0, 0.0)
 
 # ============================
 # DISK IO EXTENDED (NEW)
 # ============================
 
 const DiskIOMetrics = @NamedTuple{
-    read_mb_s::Float64, 
-    write_mb_s::Float64, 
+    read_mb_s::Float64,
+    write_mb_s::Float64,
     read_iops::Float64,      # NEW
     write_iops::Float64,     # NEW
-    io_wait_pct::Float64, 
+    io_wait_pct::Float64,
     queue_depth::Float64,
     avg_wait_ms::Float64     # NEW: average wait time
 }
@@ -315,13 +315,13 @@ function update_ema!(tracker::EMATracker, new_value::Float64)
         tracker.sample_count = 1
         return
     end
-    
+
     tracker.sample_count += 1
-    
+
     # Update EMA
     delta = new_value - tracker.value
     tracker.value += tracker.alpha * delta
-    
+
     # Update variance EMA (for standard deviation)
     tracker.variance = (1 - tracker.alpha) * (tracker.variance + tracker.alpha * delta^2)
 end
@@ -332,10 +332,10 @@ get_ema_std(tracker::EMATracker) = sqrt(max(tracker.variance, 0.0))
 function is_spike(tracker::EMATracker, value::Float64, threshold::Float64=2.0)
     !tracker.initialized && return false
     tracker.sample_count < 10 && return false  # Need enough samples
-    
+
     std_dev = get_ema_std(tracker)
     std_dev < 0.001 && return false  # Avoid division issues
-    
+
     z_score = abs(value - tracker.value) / std_dev
     return z_score > threshold
 end
@@ -383,7 +383,7 @@ mutable struct AnomalyScore
 end
 
 AnomalyScore() = AnomalyScore(
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     "stable", "stable", "stable", "stable", "stable",
     false, false, false, false,
     Prediction[]
@@ -393,7 +393,7 @@ AnomalyScore() = AnomalyScore(
 # HISTORY BUFFER (Enhanced)
 # ============================
 
-const HISTORY_LENGTH = 120  # 2 minutes at 1 sample/sec, or 1 min at 0.5s
+const HISTORY_LENGTH = COLLECTOR_CONFIG.history_length
 
 mutable struct MetricHistory
     cpu_usage::Vector{Float64}
@@ -404,7 +404,7 @@ mutable struct MetricHistory
     disk_io::Vector{Float64}
     cpu_temp::Vector{Float64}    # NEW
     timestamps::Vector{Float64}
-    
+
     # NEW: EMA baselines for anomaly detection
     cpu_baseline::EMATracker
     mem_baseline::EMATracker
@@ -434,14 +434,14 @@ function push_metric!(h::MetricHistory, cpu, mem, rx, tx, gpu, dio, temp=0.0)
     push!(h.disk_io, dio)
     push!(h.cpu_temp, temp)
     push!(h.timestamps, time())
-    
+
     # Update baselines
     update_ema!(h.cpu_baseline, cpu)
     update_ema!(h.mem_baseline, mem)
     update_ema!(h.io_baseline, dio)
     update_ema!(h.net_baseline, rx + tx)
     temp > 0 && update_ema!(h.temp_baseline, temp)
-    
+
     # Trim to history length
     while length(h.cpu_usage) > HISTORY_LENGTH
         popfirst!(h.cpu_usage)
@@ -487,12 +487,12 @@ RateTracker() = RateTracker(0, time(), 0.0)
 function update_rate!(tracker::RateTracker, current_value::Int)
     now = time()
     dt = now - tracker.prev_time
-    
+
     if dt > 0 && tracker.prev_value > 0
         delta = current_value - tracker.prev_value
         tracker.rate = max(0.0, delta / dt)
     end
-    
+
     tracker.prev_value = current_value
     tracker.prev_time = now
     return tracker.rate
@@ -505,41 +505,41 @@ end
 mutable struct SystemMonitor
     # CPU per-core state
     cores::Vector{CoreState}
-    cpu_prev::Dict{String, CoreState}
-    
+    cpu_prev::Dict{String,CoreState}
+
     # Disk IO state
-    disk_prev::Dict{String, DiskIOState}
-    
+    disk_prev::Dict{String,DiskIOState}
+
     # Network state
-    net_prev::Dict{String, NetworkInterface}
+    net_prev::Dict{String,NetworkInterface}
     net_prev_ts::Float64
-    
+
     # Process state
-    proc_prev::Dict{Int, ProcState}
+    proc_prev::Dict{Int,ProcState}
     proc_prev_ts::Float64
-    
+
     # Current metrics
     cpu_info::CPUInfo
     memory::MemoryInfo
-    gpu::Union{Nothing, GPUInfo}
+    gpu::Union{Nothing,GPUInfo}
     disks::Vector{DiskUsage}
-    disk_io::Dict{String, DiskIOMetrics}
+    disk_io::Dict{String,DiskIOMetrics}
     processes::Vector{ProcessInfo}
     network::NetworkInfo
     battery::BatteryInfo
     system::SystemInfo
-    
+
     # AI components
     anomaly::AnomalyScore
     history::MetricHistory
-    
+
     # NEW: Static cache
     static_cache::StaticCache
-    
+
     # NEW: Rate trackers
     ctxt_rate::RateTracker
     intr_rate::RateTracker
-    
+
     # Timestamps
     last_update::Float64
     update_count::Int
@@ -549,17 +549,17 @@ function SystemMonitor()
     n_cores = Sys.CPU_THREADS
     SystemMonitor(
         [CoreState() for _ in 1:n_cores],
-        Dict{String, CoreState}(),
-        Dict{String, DiskIOState}(),
-        Dict{String, NetworkInterface}(),
+        Dict{String,CoreState}(),
+        Dict{String,DiskIOState}(),
+        Dict{String,NetworkInterface}(),
         time(),
-        Dict{Int, ProcState}(),
+        Dict{Int,ProcState}(),
         time(),
         CPUInfo(),
         MemoryInfo(),
         nothing,
         DiskUsage[],
-        Dict{String, DiskIOMetrics}(),
+        Dict{String,DiskIOMetrics}(),
         ProcessInfo[],
         NetworkInfo(),
         BatteryInfo(),
@@ -600,7 +600,7 @@ function format_duration(seconds::Number)
     hours = (s % 86400) ÷ 3600
     mins = (s % 3600) ÷ 60
     secs = s % 60
-    
+
     if days > 0
         return @sprintf("%dd %02dh %02dm", days, hours, mins)
     elseif hours > 0

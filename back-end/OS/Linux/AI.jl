@@ -19,32 +19,10 @@
 using Statistics: mean, std, median
 
 # ============================
-# CONFIGURATION
+# CONFIGURATION (from Config.jl)
 # ============================
-
-const AI_CONFIG = (
-    cpu_critical = 95.0,
-    mem_critical = 95.0,
-    temp_critical = 95.0,
-    zscore_warning = 2.5,
-    zscore_critical = 3.5,
-    cusum_threshold = 5.0,
-    cusum_drift = 0.5,
-    adwin_delta = 0.002,
-    adwin_min_window = 30,
-    hw_alpha = 0.3,
-    hw_beta = 0.1,
-    hw_gamma = 0.1,
-    hw_season_length = 60,
-    sample_rate_min = 0.5,
-    sample_rate_max = 5.0,
-    volatility_threshold = 0.1,
-    saturation_knee_ratio = 0.8,
-    cpu_temp_correlation_min = 0.5,
-    io_latency_correlation_min = 0.6,
-    prediction_confidence_min = 0.6,
-    min_samples_for_prediction = 30,
-)
+# Note: AI_CONFIG is defined in config/Config.jl and loaded by main.jl
+# All AI parameters are centralized there and can be overridden via ENV
 
 # ============================
 # T-DIGEST (Streaming Percentiles)
@@ -80,7 +58,7 @@ end
 
 function compress!(td::TDigest)
     isempty(td.centroids) && return
-    sort!(td.centroids, by = c -> c.mean)
+    sort!(td.centroids, by=c -> c.mean)
     new_centroids = TDigestCentroid[]
     current = td.centroids[1]
     for i in 2:length(td.centroids)
@@ -102,7 +80,7 @@ end
 function quantile(td::TDigest, q::Float64)
     isempty(td.centroids) && return 0.0
     length(td.centroids) == 1 && return td.centroids[1].mean
-    sort!(td.centroids, by = c -> c.mean)
+    sort!(td.centroids, by=c -> c.mean)
     target = q * td.total_weight
     cumulative = 0.0
     for i in 1:length(td.centroids)
@@ -306,9 +284,9 @@ function compress_buckets!(a::ADWIN)
                 m1, m2 = a.bucket_means[i], a.bucket_means[i+1]
                 a.bucket_means[i] = (n1 * m1 + n2 * m2) / (n1 + n2)
                 a.bucket_sizes[i] = n1 + n2
-                deleteat!(a.bucket_means, i+1)
-                deleteat!(a.bucket_variances, i+1)
-                deleteat!(a.bucket_sizes, i+1)
+                deleteat!(a.bucket_means, i + 1)
+                deleteat!(a.bucket_variances, i + 1)
+                deleteat!(a.bucket_sizes, i + 1)
                 merged = true
                 break
             end
@@ -328,7 +306,7 @@ function detect_regime_change!(a::ADWIN)
         mean_left = sum_left / n_left
         mean_right = (a.total_sum - sum_left) / n_right
         m = 1.0 / n_left + 1.0 / n_right
-        eps = sqrt(m * log(2/a.delta) / 2)
+        eps = sqrt(m * log(2 / a.delta) / 2)
         if abs(mean_left - mean_right) > eps
             a.regime_detected = true
             a.regime_change_time = time()
@@ -687,14 +665,14 @@ end
 function generate_predictions(monitor::SystemMonitor)
     preds = Prediction[]
     ai = get_ai_state()
-    
+
     cpu = get_cpu_usage(monitor)
     if ai.cpu.welford.n >= AI_CONFIG.min_samples_for_prediction
         p = predict_time_to_critical_advanced(ai.cpu, cpu, AI_CONFIG.cpu_critical)
         p.time_to_critical_sec < 3600 && p.confidence > AI_CONFIG.prediction_confidence_min &&
             push!(preds, Prediction("CPU", p.current_value, p.trend_per_sec, p.time_to_critical_sec, p.threshold, p.confidence))
     end
-    
+
     mem = get_memory_usage_percent(monitor)
     if ai.mem.welford.n >= AI_CONFIG.min_samples_for_prediction
         p = predict_time_to_critical_advanced(ai.mem, mem, AI_CONFIG.mem_critical)
@@ -703,14 +681,14 @@ function generate_predictions(monitor::SystemMonitor)
         p.time_to_critical_sec < 3600 && p.confidence > AI_CONFIG.prediction_confidence_min &&
             push!(preds, Prediction("Memory", p.current_value, p.trend_per_sec, p.time_to_critical_sec, p.threshold, p.confidence))
     end
-    
+
     temp = get_cpu_temp(monitor)
     if temp > 0 && ai.temp.welford.n >= AI_CONFIG.min_samples_for_prediction
         p = predict_time_to_critical_advanced(ai.temp, temp, AI_CONFIG.temp_critical)
         p.time_to_critical_sec < 1800 && p.confidence > AI_CONFIG.prediction_confidence_min &&
             push!(preds, Prediction("Temperature", p.current_value, p.trend_per_sec, p.time_to_critical_sec, p.threshold, p.confidence))
     end
-    
+
     for disk in monitor.disks
         if disk.percent > 70
             dio = get_total_disk_io(monitor)
@@ -763,39 +741,39 @@ function update_anomaly!(monitor::SystemMonitor)
     ai = get_ai_state()
     ai.sample_count += 1
     ai.last_update = time()
-    
+
     monitor.anomaly.cpu = score_cpu_anomaly(monitor)
     monitor.anomaly.mem = score_mem_anomaly(monitor)
     monitor.anomaly.io = score_io_anomaly(monitor)
     monitor.anomaly.net = score_net_anomaly(monitor)
     monitor.anomaly.gpu = score_gpu_anomaly(monitor)
     monitor.anomaly.temp = score_temp_anomaly(monitor)
-    
+
     w = (cpu=0.20, mem=0.20, io=0.15, net=0.10, gpu=0.15, temp=0.20)
     gpu_c = monitor.gpu !== nothing ? w.gpu * monitor.anomaly.gpu : 0.0
     gpu_w = monitor.gpu !== nothing ? w.gpu : 0.0
     temp_c = get_cpu_temp(monitor) > 0 ? w.temp * monitor.anomaly.temp : 0.0
     temp_w = get_cpu_temp(monitor) > 0 ? w.temp : 0.0
     total_w = w.cpu + w.mem + w.io + w.net + gpu_w + temp_w
-    
-    monitor.anomaly.overall = (w.cpu * monitor.anomaly.cpu + w.mem * monitor.anomaly.mem + 
-        w.io * monitor.anomaly.io + w.net * monitor.anomaly.net + gpu_c + temp_c) / total_w
-    
-    (ai.coherence.temp_without_load || ai.coherence.latency_without_io) && 
+
+    monitor.anomaly.overall = (w.cpu * monitor.anomaly.cpu + w.mem * monitor.anomaly.mem +
+                               w.io * monitor.anomaly.io + w.net * monitor.anomaly.net + gpu_c + temp_c) / total_w
+
+    (ai.coherence.temp_without_load || ai.coherence.latency_without_io) &&
         (monitor.anomaly.overall = min(1.0, monitor.anomaly.overall + 0.2))
-    
+
     push_metric!(monitor.history, get_cpu_usage(monitor), get_memory_usage_percent(monitor),
         monitor.network.rx_bps / 1e6, monitor.network.tx_bps / 1e6,
         monitor.gpu !== nothing ? monitor.gpu.util : 0.0,
         sum(io.read_mb_s + io.write_mb_s for (_, io) in monitor.disk_io; init=0.0),
         get_cpu_temp(monitor))
-    
+
     monitor.anomaly.cpu_trend = ai.cpu.holt_winters.trend > 0.1 ? "rising" : ai.cpu.holt_winters.trend < -0.1 ? "falling" : "stable"
     monitor.anomaly.mem_trend = ai.mem.holt_winters.trend > 0.1 ? "rising" : ai.mem.holt_winters.trend < -0.1 ? "falling" : "stable"
     monitor.anomaly.io_trend = ai.io_throughput.holt_winters.trend > 0.1 ? "rising" : ai.io_throughput.holt_winters.trend < -0.1 ? "falling" : "stable"
     monitor.anomaly.net_trend = ai.net.holt_winters.trend > 0.1 ? "rising" : ai.net.holt_winters.trend < -0.1 ? "falling" : "stable"
     monitor.anomaly.trend = monitor.anomaly.cpu_trend
-    
+
     detect_spikes!(monitor)
     monitor.anomaly.predictions = generate_predictions(monitor)
     ai.regime_description = detect_current_regime(monitor)
@@ -822,49 +800,49 @@ function generate_alerts(monitor::SystemMonitor)
     cpu = get_cpu_usage(monitor)
     mem = get_memory_usage_percent(monitor)
     temp = get_cpu_temp(monitor)
-    
+
     cpu > AI_CONFIG.cpu_critical && push!(alerts, Alert(:critical, "CPU", "Critical CPU usage", cpu, AI_CONFIG.cpu_critical))
     is_anomaly(ai.cpu) && push!(alerts, Alert(:warning, "CPU", "CPU anomaly (Z=$(round(ai.cpu.zscore_robust, digits=2)))", cpu, 0.0))
     ai.cpu.drift_detected && push!(alerts, Alert(:warning, "CPU", "CPU drift ($(ai.cpu.drift_direction > 0 ? "+" : "-"))", cpu, 0.0))
     monitor.anomaly.cpu_spike && push!(alerts, Alert(:warning, "CPU", "CPU spike", cpu, 0.0))
-    
+
     mem > AI_CONFIG.mem_critical && push!(alerts, Alert(:critical, "Memory", "Critical memory", mem, AI_CONFIG.mem_critical))
     is_anomaly(ai.mem) && push!(alerts, Alert(:warning, "Memory", "Memory anomaly", mem, 0.0))
     ai.mem.drift_detected && ai.mem.drift_direction > 0 && push!(alerts, Alert(:warning, "Memory", "Potential memory leak (CUSUM)", mem, 0.0))
     monitor.anomaly.mem_spike && push!(alerts, Alert(:warning, "Memory", "Memory spike", mem, 0.0))
-    
+
     temp > AI_CONFIG.temp_critical && push!(alerts, Alert(:critical, "Temp", "Critical temperature", temp, AI_CONFIG.temp_critical))
     temp > 80 && push!(alerts, Alert(:warning, "Temp", "High temperature", temp, 80.0))
     ai.coherence.temp_without_load && push!(alerts, Alert(:warning, "Hardware", "Temp without load (hardware?)", temp, 0.0))
     ai.coherence.latency_without_io && push!(alerts, Alert(:warning, "Hardware", "IO latency without throughput (disk?)", ai.io_latency.current_value, 0.0))
-    
+
     for (dev, io) in monitor.disk_io
         sat = analyze_saturation(io.io_wait_pct / 100.0, io.avg_wait_ms, io.queue_depth)
         sat.at_knee_point && push!(alerts, Alert(:warning, "Disk", "Disk $dev at saturation knee", io.io_wait_pct, 80.0))
     end
-    
+
     if monitor.gpu !== nothing
         monitor.gpu.temp > 85 && push!(alerts, Alert(:warning, "GPU", "High GPU temp", monitor.gpu.temp, 85.0))
         !isempty(monitor.gpu.throttling) && push!(alerts, Alert(:warning, "GPU", "GPU throttling", 1.0, 0.0))
     end
-    
+
     for disk in monitor.disks
         disk.percent > 95 && push!(alerts, Alert(:critical, "Disk", "Disk $(disk.mount) critical", disk.percent, 95.0))
         disk.percent > 90 && disk.percent <= 95 && push!(alerts, Alert(:warning, "Disk", "Disk $(disk.mount) full", disk.percent, 90.0))
     end
-    
+
     monitor.battery.present && monitor.battery.source == "Battery" && monitor.battery.percent < 10 &&
         push!(alerts, Alert(:critical, "Battery", "Critical battery", monitor.battery.percent, 10.0))
     monitor.battery.present && monitor.battery.source == "Battery" && monitor.battery.percent < 20 && monitor.battery.percent >= 10 &&
         push!(alerts, Alert(:warning, "Battery", "Low battery", monitor.battery.percent, 20.0))
-    
+
     monitor.system.oom_kills > 0 && push!(alerts, Alert(:critical, "System", "OOM kills", Float64(monitor.system.oom_kills), 0.0))
     (ai.cpu.in_regime_change || ai.mem.in_regime_change) && push!(alerts, Alert(:info, "System", "Regime: $(ai.regime_description)", 0.0, 0.0))
-    
+
     for p in monitor.anomaly.predictions
         p.time_to_critical_sec < 600 && push!(alerts, Alert(:warning, "Predict", "$(p.metric) critical ~$(format_time_remaining(p.time_to_critical_sec))", p.current_value, p.threshold))
     end
-    
+
     monitor.network.tcp.close_wait > 100 && push!(alerts, Alert(:warning, "Network", "High CLOSE_WAIT", Float64(monitor.network.tcp.close_wait), 100.0))
     alerts
 end
@@ -887,11 +865,11 @@ end
 function get_ai_diagnostic()
     ai = get_ai_state()
     (sample_count=ai.sample_count, regime=ai.regime_description, interval=ai.recommended_sample_interval,
-     cpu=(z=ai.cpu.zscore_robust, regime=ai.cpu.regime_id, drift=ai.cpu.drift_detected, trend=ai.cpu.holt_winters.trend),
-     mem=(z=ai.mem.zscore_robust, regime=ai.mem.regime_id, drift=ai.mem.drift_detected, trend=ai.mem.holt_winters.trend),
-     io=(z_tp=ai.io_throughput.zscore_robust, z_lat=ai.io_latency.zscore_robust, drift=ai.io_throughput.drift_detected),
-     coherence=(cpu_temp=ai.coherence.cpu_temp_correlation, io_lat=ai.coherence.io_latency_correlation,
-                temp_anom=ai.coherence.temp_without_load, io_anom=ai.coherence.latency_without_io))
+        cpu=(z=ai.cpu.zscore_robust, regime=ai.cpu.regime_id, drift=ai.cpu.drift_detected, trend=ai.cpu.holt_winters.trend),
+        mem=(z=ai.mem.zscore_robust, regime=ai.mem.regime_id, drift=ai.mem.drift_detected, trend=ai.mem.holt_winters.trend),
+        io=(z_tp=ai.io_throughput.zscore_robust, z_lat=ai.io_latency.zscore_robust, drift=ai.io_throughput.drift_detected),
+        coherence=(cpu_temp=ai.coherence.cpu_temp_correlation, io_lat=ai.coherence.io_latency_correlation,
+            temp_anom=ai.coherence.temp_without_load, io_anom=ai.coherence.latency_without_io))
 end
 
 reset_ai_state!() = (AI_STATE[] = AIState(); nothing)
