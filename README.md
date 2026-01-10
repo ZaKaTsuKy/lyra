@@ -168,7 +168,7 @@ Le projet repose sur trois principes fondamentaux :
 
 ```bash
 # Cloner le dépôt
-git clone https://github.com/votre-repo/omni-monitor.git
+git clone https://github.com/zakatsuky/ai_dashboard.git
 cd omni-monitor/back-end
 
 # Installer les dépendances Julia
