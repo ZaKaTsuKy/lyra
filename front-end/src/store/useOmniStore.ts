@@ -9,13 +9,18 @@ interface OmniState {
     history: UpdatePayload[]; // Keeping history for charts later
     error: string | null;
 
+    // Internal state
+    retryCount: number;
+    cleanupFn: (() => void) | null;
+
     connect: (url?: string) => void;
     disconnect: () => void;
 }
 
-const DEFAULT_URL = 'ws://localhost:8080/ws';
+const DEFAULT_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 const HISTORY_SIZE = 60;
 const RECONNECT_INTERVAL = 3000;
+const MAX_RETRIES = 10;
 
 export const useOmniStore = create<OmniState>((set, get) => ({
     socket: null,
@@ -24,6 +29,10 @@ export const useOmniStore = create<OmniState>((set, get) => ({
     liveData: null,
     history: [],
     error: null,
+
+    // Internal state for retry management (not part of interface)
+    retryCount: 0,
+    cleanupFn: null as (() => void) | null,
 
     connect: (url = DEFAULT_URL) => {
         const currentSocket = get().socket;
@@ -39,12 +48,22 @@ export const useOmniStore = create<OmniState>((set, get) => ({
         } catch (e) {
             console.error('WebSocket creation failed:', e);
             set({ status: 'error', error: 'Failed to create WebSocket' });
-            setTimeout(() => get().connect(url), RECONNECT_INTERVAL);
+
+            const state = get();
+            if (state.retryCount < MAX_RETRIES) {
+                const timeout = setTimeout(() => {
+                    set(s => ({ retryCount: s.retryCount + 1 }));
+                    get().connect(url);
+                }, RECONNECT_INTERVAL);
+                set({ cleanupFn: () => clearTimeout(timeout) });
+            } else {
+                set({ error: 'Max reconnection attempts reached' });
+            }
             return;
         }
 
         ws.onopen = () => {
-            set({ status: 'connected', socket: ws, error: null });
+            set({ status: 'connected', socket: ws, error: null, retryCount: 0 });
             console.log('Connected to Omni Monitor');
         };
 
@@ -85,8 +104,16 @@ export const useOmniStore = create<OmniState>((set, get) => ({
                 // If it was validly connected or connecting, try to reconnect
                 if (state.status !== 'disconnected') {
                     console.log('Connection lost, reconnecting in 3s...');
-                    setTimeout(() => get().connect(url), RECONNECT_INTERVAL);
-                    return { status: 'connecting', socket: null };
+
+                    if (state.retryCount < MAX_RETRIES) {
+                        const timeout = setTimeout(() => {
+                            set(s => ({ retryCount: s.retryCount + 1 }));
+                            get().connect(url);
+                        }, RECONNECT_INTERVAL);
+                        return { status: 'connecting', socket: null, cleanupFn: () => clearTimeout(timeout) };
+                    } else {
+                        return { status: 'error', socket: null, error: 'Max reconnection attempts reached' };
+                    }
                 }
                 return { status: 'disconnected', socket: null };
             });
@@ -100,10 +127,13 @@ export const useOmniStore = create<OmniState>((set, get) => ({
     },
 
     disconnect: () => {
-        const { socket } = get();
+        const { socket, cleanupFn } = get();
         if (socket) {
-            socket.close(); // This will trigger onclose
+            socket.close();
         }
-        set({ socket: null, status: 'disconnected' });
+        if (cleanupFn) {
+            cleanupFn();
+        }
+        set({ socket: null, status: 'disconnected', cleanupFn: null, retryCount: 0 });
     },
 }));
