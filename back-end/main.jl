@@ -125,7 +125,11 @@ function run_monitor()
                 @warn "Error collecting metrics" exception = e
             end
 
-            # Render dashboard
+            # Create atomic snapshot BEFORE any async operations
+            # This deep-copies all values to prevent race conditions
+            snapshot = create_snapshot(monitor)
+
+            # Render dashboard (sync - uses monitor directly, safe here)
             try
                 render_dashboard(monitor)
             catch e
@@ -134,12 +138,9 @@ function run_monitor()
                 println("Update #$(monitor.update_count) - Collecting metrics...")
             end
 
-            # Broadcast to WebSocket clients
-            try
-                broadcast_update!(monitor)
-            catch e
-                @debug "Error broadcasting update" exception = e
-            end
+            # Async broadcast using immutable snapshot
+            # JSON serialization happens in spawned task, non-blocking
+            broadcast_async!(snapshot)
 
             # Wait for next refresh
             sleep(CONFIG.refresh_interval)

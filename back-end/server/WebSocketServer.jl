@@ -1,11 +1,12 @@
 # WebSocketServer.jl
 # ============================
-# OMNI MONITOR - WebSocket Server
+# OMNI MONITOR - WebSocket Server v2.0
 # ============================
-# High-performance WebSocket server using Oxygen.jl
-# with optimized two-payload strategy:
-# - INIT_PAYLOAD: Full history on connection
-# - UPDATE_PAYLOAD: Instant values only per iteration
+# Hardened implementation with:
+# - MAX_CLIENTS limit (DoS protection)
+# - Configurable CORS origins
+# - safe_send with timeout
+# - Atomic snapshot pattern (thread-safe)
 # ============================
 
 using Oxygen
@@ -14,7 +15,20 @@ using JSON3
 using StructTypes
 
 # ============================
-# DTO STRUCTURES (JSON Payloads)
+# SERVER CONFIGURATION
+# ============================
+
+const MAX_CLIENTS = 50
+const SEND_TIMEOUT_SEC = 5.0
+const ALLOWED_ORIGINS = Ref{Vector{String}}(["*"])
+
+"""Set allowed CORS origins. Use ["*"] for dev, specific origins for prod."""
+function set_allowed_origins!(origins::Vector{String})
+    ALLOWED_ORIGINS[] = origins
+end
+
+# ============================
+# DTO STRUCTURES (Immutable JSON Payloads)
 # ============================
 
 """Subset of StaticCache for JSON serialization"""
@@ -63,7 +77,7 @@ StructTypes.StructType(::Type{InitPayload}) = StructTypes.Struct()
 
 InitPayload(static, disks, history) = InitPayload("init", static, disks, history, time())
 
-"""CPU instant values"""
+"""CPU instant values (immutable deep copy)"""
 struct CPUInstant
     freq_avg::Float64
     freq_max::Float64
@@ -79,7 +93,7 @@ end
 
 StructTypes.StructType(::Type{CPUInstant}) = StructTypes.Struct()
 
-"""Memory instant values"""
+"""Memory instant values (immutable deep copy)"""
 struct MemoryInstant
     total_kb::Int
     used_kb::Int
@@ -91,7 +105,7 @@ end
 
 StructTypes.StructType(::Type{MemoryInstant}) = StructTypes.Struct()
 
-"""GPU instant values"""
+"""GPU instant values (immutable deep copy)"""
 struct GPUInstant
     name::String
     util::Float64
@@ -104,7 +118,7 @@ end
 
 StructTypes.StructType(::Type{GPUInstant}) = StructTypes.Struct()
 
-"""Network instant values"""
+"""Network instant values (immutable deep copy)"""
 struct NetworkInstant
     primary_iface::String
     rx_bps::Float64
@@ -116,7 +130,7 @@ end
 
 StructTypes.StructType(::Type{NetworkInstant}) = StructTypes.Struct()
 
-"""Disk instant values"""
+"""Disk instant values (immutable deep copy)"""
 struct DiskInstant
     mount::String
     used_gb::Float64
@@ -128,7 +142,7 @@ end
 
 StructTypes.StructType(::Type{DiskInstant}) = StructTypes.Struct()
 
-"""Battery instant values"""
+"""Battery instant values (immutable deep copy)"""
 struct BatteryInstant
     present::Bool
     percent::Float64
@@ -139,7 +153,7 @@ end
 
 StructTypes.StructType(::Type{BatteryInstant}) = StructTypes.Struct()
 
-"""System instant values"""
+"""System instant values (immutable deep copy)"""
 struct SystemInstant
     uptime_sec::Float64
     environment::String
@@ -153,7 +167,7 @@ end
 
 StructTypes.StructType(::Type{SystemInstant}) = StructTypes.Struct()
 
-"""Anomaly instant values"""
+"""Anomaly instant values (immutable deep copy)"""
 struct AnomalyInstant
     cpu::Float64
     mem::Float64
@@ -171,7 +185,7 @@ end
 
 StructTypes.StructType(::Type{AnomalyInstant}) = StructTypes.Struct()
 
-"""Top process info for updates"""
+"""Top process info (immutable deep copy)"""
 struct ProcessInstant
     pid::Int
     name::String
@@ -182,7 +196,7 @@ end
 
 StructTypes.StructType(::Type{ProcessInstant}) = StructTypes.Struct()
 
-"""UPDATE_PAYLOAD: Sent every loop iteration"""
+"""UPDATE_PAYLOAD: Sent every loop iteration (fully immutable)"""
 struct UpdatePayload
     type::String
     cpu::CPUInstant
@@ -202,10 +216,10 @@ StructTypes.StructType(::Type{UpdatePayload}) = StructTypes.Struct()
 StructTypes.StructType(::Type{Union{Nothing,GPUInstant}}) = StructTypes.Struct()
 
 # ============================
-# CLIENT MANAGEMENT
+# CLIENT MANAGEMENT (Thread-Safe)
 # ============================
 
-"""Thread-safe WebSocket client manager"""
+"""Thread-safe WebSocket client manager with limits"""
 mutable struct WebSocketClients
     clients::Set{HTTP.WebSockets.WebSocket}
     lock::ReentrantLock
@@ -215,9 +229,18 @@ WebSocketClients() = WebSocketClients(Set{HTTP.WebSockets.WebSocket}(), Reentran
 
 const CLIENTS = WebSocketClients()
 
-function add_client!(ws::HTTP.WebSockets.WebSocket)
+"""
+Add client with MAX_CLIENTS limit.
+Returns true if added, false if rejected (limit reached).
+"""
+function add_client!(ws::HTTP.WebSockets.WebSocket)::Bool
     lock(CLIENTS.lock) do
+        if length(CLIENTS.clients) >= MAX_CLIENTS
+            @warn "Client rejected: MAX_CLIENTS ($MAX_CLIENTS) reached"
+            return false
+        end
         push!(CLIENTS.clients, ws)
+        return true
     end
 end
 
@@ -233,12 +256,62 @@ function get_clients()::Vector{HTTP.WebSockets.WebSocket}
     end
 end
 
+function get_client_count()::Int
+    lock(CLIENTS.lock) do
+        length(CLIENTS.clients)
+    end
+end
+
 # ============================
-# PAYLOAD BUILDERS
+# SAFE SEND WITH TIMEOUT
 # ============================
 
+"""
+Send data to WebSocket with timeout protection.
+Returns true on success, false on timeout or error.
+"""
+function safe_send(ws::HTTP.WebSockets.WebSocket, data::String)::Bool
+    result = Ref(false)
+
+    task = @async begin
+        try
+            HTTP.WebSockets.send(ws, data)
+            result[] = true
+        catch e
+            @debug "Send failed" exception = e
+        end
+    end
+
+    # Wait with timeout
+    timedwait(() -> istaskdone(task), SEND_TIMEOUT_SEC)
+
+    if !istaskdone(task)
+        @warn "Send timeout after $(SEND_TIMEOUT_SEC)s, client will be removed"
+        # Note: Task may complete later, but we treat it as failed
+    end
+
+    return result[]
+end
+
+"""Close WebSocket safely, ignoring errors"""
+function safe_close(ws::HTTP.WebSockets.WebSocket)
+    try
+        close(ws)
+    catch
+        # Ignore close errors
+    end
+end
+
+# ============================
+# SNAPSHOT BUILDERS (Deep Copy)
+# ============================
+
+"""
+Create immutable INIT payload from monitor.
+Deep copies all data to ensure thread-safety.
+"""
 function build_init_payload(monitor::SystemMonitor)::InitPayload
-    # Static info
+    # Static info (strings are immutable)
     sc = monitor.static_cache
     static = StaticDTO(
         sc.cpu_model,
@@ -248,10 +321,10 @@ function build_init_payload(monitor::SystemMonitor)::InitPayload
         sc.hostname
     )
 
-    # Disk configuration
+    # Disk configuration (deep copy)
     disks = [DiskDTO(d.mount, d.total_gb) for d in monitor.disks]
 
-    # Full history
+    # Full history (deep copy vectors)
     h = monitor.history
     history = HistoryDTO(
         copy(h.cpu_usage),
@@ -267,79 +340,172 @@ function build_init_payload(monitor::SystemMonitor)::InitPayload
     return InitPayload(static, disks, history)
 end
 
-function build_update_payload(monitor::SystemMonitor)::UpdatePayload
+"""
+Create immutable UPDATE payload (snapshot) from monitor.
+CRITICAL: All values are deep-copied by value, no references to mutable structs.
+This snapshot is safe for async serialization in another thread.
+"""
+function create_snapshot(monitor::SystemMonitor)::UpdatePayload
+    # CPU - copy all primitive values
     ci = monitor.cpu_info
     cpu = CPUInstant(
-        ci.freq_avg, ci.freq_max,
-        ci.load1, ci.load5, ci.load15,
-        ci.pressure_avg10,
-        ci.ctxt_switches_ps, ci.interrupts_ps,
-        ci.temperature.package, ci.temperature.max_temp
+        Float64(ci.freq_avg),
+        Float64(ci.freq_max),
+        Float64(ci.load1),
+        Float64(ci.load5),
+        Float64(ci.load15),
+        Float64(ci.pressure_avg10),
+        Float64(ci.ctxt_switches_ps),
+        Float64(ci.interrupts_ps),
+        Float64(ci.temperature.package),
+        Float64(ci.temperature.max_temp)
     )
 
+    # Memory - copy all primitive values
     m = monitor.memory
     memory = MemoryInstant(
-        m.total_kb, m.used_kb, m.avail_kb,
-        m.swap_total_kb, m.swap_used_kb,
-        m.pressure_avg10
+        Int(m.total_kb),
+        Int(m.used_kb),
+        Int(m.avail_kb),
+        Int(m.swap_total_kb),
+        Int(m.swap_used_kb),
+        Float64(m.pressure_avg10)
     )
 
+    # GPU - deep copy if present
     gpu = if monitor.gpu !== nothing
         g = monitor.gpu
-        GPUInstant(g.name, g.util, g.mem_used, g.mem_total, g.temp, g.power_draw, g.power_limit)
+        GPUInstant(
+            String(g.name),
+            Float64(g.util),
+            Float64(g.mem_used),
+            Float64(g.mem_total),
+            Float64(g.temp),
+            Float64(g.power_draw),
+            Float64(g.power_limit)
+        )
     else
         nothing
     end
 
+    # Network - copy all values
     n = monitor.network
     network = NetworkInstant(
-        n.primary_iface, n.rx_bps, n.tx_bps,
-        n.classification,
-        n.tcp.established, n.tcp.time_wait
+        String(n.primary_iface),
+        Float64(n.rx_bps),
+        Float64(n.tx_bps),
+        String(n.classification),
+        Int(n.tcp.established),
+        Int(n.tcp.time_wait)
     )
 
-    disks = [DiskInstant(d.mount, d.used_gb, d.avail_gb, d.percent, d.read_bps, d.write_bps)
-             for d in monitor.disks]
+    # Disks - create new immutable structs
+    disks = [
+        DiskInstant(
+            String(d.mount),
+            Float64(d.used_gb),
+            Float64(d.avail_gb),
+            Float64(d.percent),
+            Float64(d.read_bps),
+            Float64(d.write_bps)
+        )
+        for d in monitor.disks
+    ]
 
+    # Battery - copy all values
     b = monitor.battery
-    battery = BatteryInstant(b.present, b.percent, b.status, b.power_w, b.time_remaining_min)
+    battery = BatteryInstant(
+        Bool(b.present),
+        Float64(b.percent),
+        String(b.status),
+        Float64(b.power_w),
+        Float64(b.time_remaining_min)
+    )
 
+    # System - copy all values
     s = monitor.system
     system = SystemInstant(
-        s.uptime_sec, s.environment, s.oom_kills,
-        s.psi_cpu, s.psi_mem, s.psi_io,
-        s.procs_running, s.procs_blocked
+        Float64(s.uptime_sec),
+        String(s.environment),
+        Int(s.oom_kills),
+        Float64(s.psi_cpu),
+        Float64(s.psi_mem),
+        Float64(s.psi_io),
+        Int(s.procs_running),
+        Int(s.procs_blocked)
     )
 
+    # Anomaly - copy all values
     a = monitor.anomaly
     anomaly = AnomalyInstant(
-        a.cpu, a.mem, a.io, a.net, a.gpu, a.temp, a.overall,
-        a.trend, a.cpu_spike, a.mem_spike, a.io_spike, a.net_spike
+        Float64(a.cpu),
+        Float64(a.mem),
+        Float64(a.io),
+        Float64(a.net),
+        Float64(a.gpu),
+        Float64(a.temp),
+        Float64(a.overall),
+        String(a.trend),
+        Bool(a.cpu_spike),
+        Bool(a.mem_spike),
+        Bool(a.io_spike),
+        Bool(a.net_spike)
     )
 
-    # Top 5 processes by CPU
-    top_procs = sort(monitor.processes, by=p -> p.cpu, rev=true)[1:min(5, length(monitor.processes))]
-    top_processes = [ProcessInstant(p.pid, p.name, p.cpu, p.mem_kb, p.state) for p in top_procs]
+    # Top 5 processes - deep copy
+    procs_sorted = sort(monitor.processes, by=p -> p.cpu, rev=true)
+    top_processes = [
+        ProcessInstant(
+            Int(p.pid),
+            String(p.name),
+            Float64(p.cpu),
+            Float64(p.mem_kb),
+            Char(p.state)
+        )
+        for p in procs_sorted[1:min(5, length(procs_sorted))]
+    ]
 
     return UpdatePayload(
         "update",
-        cpu, memory, gpu, network, disks, battery, system, anomaly,
+        cpu,
+        memory,
+        gpu,
+        network,
+        disks,
+        battery,
+        system,
+        anomaly,
         top_processes,
-        monitor.update_count,
-        time()
+        Int(monitor.update_count),
+        Float64(time())
     )
 end
 
+# Legacy alias for compatibility
+build_update_payload(monitor::SystemMonitor) = create_snapshot(monitor)
+
 # ============================
-# CORS MIDDLEWARE
+# CORS MIDDLEWARE (Configurable)
 # ============================
 
 function cors_middleware(handler)
     return function (req::HTTP.Request)
+        origin = HTTP.header(req, "Origin", "*")
+        allowed = ALLOWED_ORIGINS[]
+
+        # Check if origin is allowed
+        allow_origin = if "*" in allowed
+            "*"
+        elseif origin in allowed
+            origin
+        else
+            ""  # Not allowed
+        end
+
         # Handle preflight
         if req.method == "OPTIONS"
             return HTTP.Response(204, [
-                "Access-Control-Allow-Origin" => "*",
+                "Access-Control-Allow-Origin" => allow_origin,
                 "Access-Control-Allow-Methods" => "GET, POST, OPTIONS",
                 "Access-Control-Allow-Headers" => "Content-Type",
                 "Access-Control-Max-Age" => "86400"
@@ -348,7 +514,9 @@ function cors_middleware(handler)
 
         # Normal request
         response = handler(req)
-        HTTP.setheader(response, "Access-Control-Allow-Origin" => "*")
+        if !isempty(allow_origin)
+            HTTP.setheader(response, "Access-Control-Allow-Origin" => allow_origin)
+        end
         return response
     end
 end
@@ -369,27 +537,39 @@ Start the WebSocket server asynchronously on the specified port.
 Returns the server task.
 """
 function start_websocket_server!(port::Int=8080)
-    @info "Starting WebSocket server on port $port..."
+    @info "Starting WebSocket server on port $port (max clients: $MAX_CLIENTS)..."
 
     # WebSocket endpoint
     @websocket "/ws" function (ws::HTTP.WebSockets.WebSocket)
-        add_client!(ws)
-        @info "Client connected. Total clients: $(length(get_clients()))"
+        # Check client limit
+        if !add_client!(ws)
+            # Reject: send error and close
+            try
+                HTTP.WebSockets.send(ws, """{"type":"error","message":"Server full"}""")
+            catch
+            end
+            safe_close(ws)
+            return
+        end
+
+        @info "Client connected. Total clients: $(get_client_count())"
 
         try
             # Send init payload if monitor is available
             if MONITOR_REF[] !== nothing
                 init_json = JSON3.write(build_init_payload(MONITOR_REF[]))
-                HTTP.WebSockets.send(ws, init_json)
+                if !safe_send(ws, init_json)
+                    @warn "Failed to send init payload"
+                    return
+                end
             end
 
-            # Keep connection alive, listen for client messages (ping/pong)
+            # Keep connection alive, listen for client messages
             while !eof(ws)
                 try
                     msg = HTTP.WebSockets.receive(ws)
-                    # Handle ping or ignore other messages
                     if msg == "ping"
-                        HTTP.WebSockets.send(ws, "pong")
+                        safe_send(ws, "pong")
                     end
                 catch e
                     if !(e isa EOFError || e isa HTTP.WebSockets.WebSocketError)
@@ -402,13 +582,17 @@ function start_websocket_server!(port::Int=8080)
             @warn "WebSocket error" exception = e
         finally
             remove_client!(ws)
-            @info "Client disconnected. Total clients: $(length(get_clients()))"
+            @info "Client disconnected. Total clients: $(get_client_count())"
         end
     end
 
     # Health check endpoint
     @get "/health" function ()
-        return Dict("status" => "ok", "clients" => length(get_clients()))
+        return Dict(
+            "status" => "ok",
+            "clients" => get_client_count(),
+            "max_clients" => MAX_CLIENTS
+        )
     end
 
     # Start server in background task
@@ -420,24 +604,49 @@ function start_websocket_server!(port::Int=8080)
     return server_task
 end
 
+# ============================
+# ASYNC BROADCAST (Thread-Safe)
+# ============================
+
 """
 Broadcast UPDATE_PAYLOAD to all connected WebSocket clients.
-Non-blocking: errors on individual clients don't affect others.
+ASYNC: JSON serialization happens in spawned task, not main loop.
+Uses immutable snapshot to prevent race conditions.
 """
-function broadcast_update!(monitor::SystemMonitor)
+function broadcast_async!(snapshot::UpdatePayload)
     clients = get_clients()
-    isempty(clients) && return
+    isempty(clients) && return nothing
 
-    # Build payload once
-    payload_json = JSON3.write(build_update_payload(monitor))
-
-    # Send to all clients
-    for ws in clients
-        try
-            HTTP.WebSockets.send(ws, payload_json)
+    Threads.@spawn begin
+        # Serialize in async context (not blocking main loop)
+        json = try
+            JSON3.write(snapshot)
         catch e
-            # Client probably disconnected, will be cleaned up
-            @debug "Failed to send to client" exception = e
+            @error "JSON serialization failed" exception = e
+            return
+        end
+
+        failed_clients = HTTP.WebSockets.WebSocket[]
+
+        for ws in clients
+            if !safe_send(ws, json)
+                push!(failed_clients, ws)
+            end
+        end
+
+        # Cleanup failed clients
+        for ws in failed_clients
+            remove_client!(ws)
+            safe_close(ws)
+            @debug "Removed slow/dead client"
         end
     end
+
+    return nothing
+end
+
+# Legacy function - now just creates snapshot and broadcasts async
+function broadcast_update!(monitor::SystemMonitor)
+    snapshot = create_snapshot(monitor)
+    broadcast_async!(snapshot)
 end
