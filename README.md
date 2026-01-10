@@ -4,7 +4,7 @@
 
 **Version:** 0.1.0  
 **Langage:** Julia 1.9+  
-**Plateforme:** Linux (avec architecture préparée pour Windows/macOS)  
+**Plateforme:** Linux (avec architecture préparée pour Windows/MacOS)  
 **Licence:** MIT
 
 ---
