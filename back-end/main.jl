@@ -33,6 +33,9 @@ include("OS/Linux/AI.jl")
 # UI
 include("ui/UI.jl")
 
+# WebSocket Server
+include("server/WebSocketServer.jl")
+
 # ============================
 # CONFIGURATION
 # ============================
@@ -43,6 +46,7 @@ const CONFIG = (
     enable_battery=true,
     enable_processes=true,
     max_iterations=nothing,  # nothing = infinite
+    websocket_port=8080,  # WebSocket server port
 )
 
 # ============================
@@ -94,6 +98,12 @@ function run_monitor()
     # Initialize monitor
     monitor = SystemMonitor()
 
+    # Set monitor reference for WebSocket server
+    set_monitor_ref!(monitor)
+
+    # Start WebSocket server asynchronously
+    server_task = start_websocket_server!(CONFIG.websocket_port)
+
     # Hide cursor for cleaner display
     hide_cursor()
 
@@ -122,6 +132,13 @@ function run_monitor()
                 @warn "Error rendering dashboard" exception = e
                 # Try basic output
                 println("Update #$(monitor.update_count) - Collecting metrics...")
+            end
+
+            # Broadcast to WebSocket clients
+            try
+                broadcast_update!(monitor)
+            catch e
+                @debug "Error broadcasting update" exception = e
             end
 
             # Wait for next refresh
@@ -156,6 +173,7 @@ function print_help()
         --no-gpu        Disable GPU monitoring
         --no-battery    Disable battery monitoring
         --no-processes  Disable process monitoring
+        --port PORT     WebSocket server port (default: 8080)
 
     Controls:
         Ctrl+C          Exit the monitor
@@ -187,6 +205,16 @@ function main(args=ARGS)
     end
     if "--once" in args
         @eval CONFIG = merge(CONFIG, (max_iterations=1,))
+    end
+
+    # Parse --port argument
+    for (i, arg) in enumerate(args)
+        if arg == "--port" && i < length(args)
+            port = tryparse(Int, args[i+1])
+            if port !== nothing
+                @eval CONFIG = merge(CONFIG, (websocket_port=$port,))
+            end
+        end
     end
 
     # Check platform
