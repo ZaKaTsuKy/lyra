@@ -16,9 +16,9 @@ logs/
 *.log
 
 # Packages locaux (si tu as un environnement)
-Manifest.toml
-Project.toml
-.julia/
+./back-end/Manifest.toml
+./back-end/Project.toml
+./back-end/.julia/
 
 # Fichiers IDE
 .vscode/
@@ -32,4 +32,4 @@ Thumbs.db
 .env
 
 # Fichiers d'aides
-debug.jl
+./back-end/helpers/debug.jl
