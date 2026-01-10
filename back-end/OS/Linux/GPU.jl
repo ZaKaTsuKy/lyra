@@ -3,7 +3,7 @@
 # GPU Collector - Linux (NVIDIA)
 # ============================
 
-const GPU_HISTORY_LEN = 10
+const GPU_HISTORY_LEN = COLLECTOR_CONFIG.gpu_history_len
 
 # GPU history for trend detection
 mutable struct GPUHistory

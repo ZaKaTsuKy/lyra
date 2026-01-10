@@ -15,6 +15,9 @@ using Statistics: mean
 # LOAD MODULES
 # ============================
 
+# Centralized configuration (must be first)
+include("config/Config.jl")
+
 # Core types
 include("types/MonitorTypes.jl")
 
@@ -36,17 +39,17 @@ include("ui/UI.jl")
 # WebSocket Server
 include("server/WebSocketServer.jl")
 
-# ============================
-# CONFIGURATION
-# ============================
+# Note: Configuration is now in config/Config.jl
+# Use APP_CONFIG for app settings, SERVER_CONFIG for server settings
 
-const CONFIG = (
-    refresh_interval=0.5,  # seconds
-    enable_gpu=true,
-    enable_battery=true,
-    enable_processes=true,
-    max_iterations=nothing,  # nothing = infinite
-    websocket_port=8080,  # WebSocket server port
+# Mutable runtime config (CLI can override these)
+const RUNTIME_CONFIG = Dict{Symbol,Any}(
+    :enable_gpu => APP_CONFIG.enable_gpu,
+    :enable_battery => APP_CONFIG.enable_battery,
+    :enable_processes => APP_CONFIG.enable_processes,
+    :max_iterations => APP_CONFIG.max_iterations,
+    :refresh_interval => APP_CONFIG.refresh_interval,
+    :websocket_port => SERVER_CONFIG.port,
 )
 
 # ============================
@@ -67,17 +70,17 @@ function collect_all_metrics!(monitor::SystemMonitor)
     update_network!(monitor)
 
     # GPU (optional)
-    if CONFIG.enable_gpu
+    if RUNTIME_CONFIG[:enable_gpu]
         update_gpu!(monitor)
     end
 
     # Processes (optional)
-    if CONFIG.enable_processes
+    if RUNTIME_CONFIG[:enable_processes]
         update_processes!(monitor)
     end
 
     # Battery (optional)
-    if CONFIG.enable_battery
+    if RUNTIME_CONFIG[:enable_battery]
         update_battery!(monitor)
     end
 
@@ -102,7 +105,7 @@ function run_monitor()
     set_monitor_ref!(monitor)
 
     # Start WebSocket server asynchronously
-    server_task = start_websocket_server!(CONFIG.websocket_port)
+    server_task = start_websocket_server!(RUNTIME_CONFIG[:websocket_port])
 
     # Hide cursor for cleaner display
     hide_cursor()
@@ -114,7 +117,7 @@ function run_monitor()
             iteration += 1
 
             # Check iteration limit
-            if CONFIG.max_iterations !== nothing && iteration > CONFIG.max_iterations
+            if RUNTIME_CONFIG[:max_iterations] !== nothing && iteration > RUNTIME_CONFIG[:max_iterations]
                 break
             end
 
@@ -143,7 +146,7 @@ function run_monitor()
             broadcast_async!(snapshot)
 
             # Wait for next refresh
-            sleep(CONFIG.refresh_interval)
+            sleep(RUNTIME_CONFIG[:refresh_interval])
         end
     catch e
         if isa(e, InterruptException)
@@ -201,18 +204,18 @@ function main(args=ARGS)
         return
     end
 
-    # Apply CLI options
+    # Apply CLI options (override RUNTIME_CONFIG)
     if "--no-gpu" in args
-        @eval CONFIG = merge(CONFIG, (enable_gpu=false,))
+        RUNTIME_CONFIG[:enable_gpu] = false
     end
     if "--no-battery" in args
-        @eval CONFIG = merge(CONFIG, (enable_battery=false,))
+        RUNTIME_CONFIG[:enable_battery] = false
     end
     if "--no-processes" in args
-        @eval CONFIG = merge(CONFIG, (enable_processes=false,))
+        RUNTIME_CONFIG[:enable_processes] = false
     end
     if "--once" in args
-        @eval CONFIG = merge(CONFIG, (max_iterations=1,))
+        RUNTIME_CONFIG[:max_iterations] = 1
     end
 
     # Parse --port argument
@@ -220,7 +223,7 @@ function main(args=ARGS)
         if arg == "--port" && i < length(args)
             port = tryparse(Int, args[i+1])
             if port !== nothing
-                @eval CONFIG = merge(CONFIG, (websocket_port=$port,))
+                RUNTIME_CONFIG[:websocket_port] = port
             end
         end
     end

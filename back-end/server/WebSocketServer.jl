@@ -15,25 +15,20 @@ using JSON3
 using StructTypes
 
 # ============================
-# SERVER CONFIGURATION
+# SERVER CONFIGURATION (from Config.jl)
 # ============================
 
-const MAX_CLIENTS = 50
-const SEND_TIMEOUT_SEC = 5.0
-const ALLOWED_ORIGINS = Ref{Vector{String}}(["*"])
-
-# Security limits
-const MAX_MESSAGE_SIZE = 1024        # 1KB max incoming message
-const RATE_LIMIT_WINDOW_SEC = 1.0    # Rate limit window
-const RATE_LIMIT_MAX_MESSAGES = 10   # Max messages per window
+# These read from the centralized SERVER_CONFIG (loaded by main.jl)
+# Aliases for backward compatibility and cleaner code
+get_max_clients() = SERVER_CONFIG.max_clients
+get_send_timeout() = SERVER_CONFIG.send_timeout_sec
+get_max_message_size() = SERVER_CONFIG.max_message_size
+get_rate_limit_window() = SERVER_CONFIG.rate_limit_window_sec
+get_rate_limit_max() = SERVER_CONFIG.rate_limit_max_messages
+get_allowed_origins() = SERVER_CONFIG.allowed_origins
 
 # Server state for graceful shutdown
 const SERVER_RUNNING = Ref{Bool}(true)
-
-"""Set allowed CORS origins. Use ["*"] for dev, specific origins for prod."""
-function set_allowed_origins!(origins::Vector{String})
-    ALLOWED_ORIGINS[] = origins
-end
 
 # ============================
 # DTO STRUCTURES (Immutable JSON Payloads)
@@ -252,8 +247,8 @@ Returns true if added, false if rejected (limit reached).
 """
 function add_client!(ws::HTTP.WebSockets.WebSocket)::Bool
     lock(CLIENTS.lock) do
-        if length(CLIENTS.clients) >= MAX_CLIENTS
-            @warn "Client rejected: MAX_CLIENTS ($MAX_CLIENTS) reached"
+        if length(CLIENTS.clients) >= get_max_clients()
+            @warn "Client rejected: max clients $(get_max_clients()) reached"
             return false
         end
         CLIENTS.clients[ws] = ClientState(ws)
@@ -291,15 +286,15 @@ function check_rate_limit!(ws::HTTP.WebSockets.WebSocket)::Bool
         now = time()
 
         # Reset window if expired
-        if now - state.window_start >= RATE_LIMIT_WINDOW_SEC
+        if now - state.window_start >= get_rate_limit_window()
             state.message_count = 0
             state.window_start = now
         end
 
         state.message_count += 1
 
-        if state.message_count > RATE_LIMIT_MAX_MESSAGES
-            @warn "Rate limit exceeded: $(state.message_count) messages in $(RATE_LIMIT_WINDOW_SEC)s"
+        if state.message_count > get_rate_limit_max()
+            @warn "Rate limit exceeded: $(state.message_count) messages in $(get_rate_limit_window())s"
             return false
         end
 
@@ -328,10 +323,10 @@ function safe_send(ws::HTTP.WebSockets.WebSocket, data::String)::Bool
     end
 
     # Wait with timeout
-    timedwait(() -> istaskdone(task), SEND_TIMEOUT_SEC)
+    timedwait(() -> istaskdone(task), get_send_timeout())
 
     if !istaskdone(task)
-        @warn "Send timeout after $(SEND_TIMEOUT_SEC)s, client will be removed"
+        @warn "Send timeout after $(get_send_timeout())s, client will be removed"
         # Note: Task may complete later, but we treat it as failed
     end
 
@@ -536,7 +531,7 @@ build_update_payload(monitor::SystemMonitor) = create_snapshot(monitor)
 function cors_middleware(handler)
     return function (req::HTTP.Request)
         origin = HTTP.header(req, "Origin", "*")
-        allowed = ALLOWED_ORIGINS[]
+        allowed = get_allowed_origins()
 
         # Check if origin is allowed
         allow_origin = if "*" in allowed
@@ -582,7 +577,7 @@ Start the WebSocket server asynchronously on the specified port.
 Returns the server task.
 """
 function start_websocket_server!(port::Int=8080)
-    @info "Starting WebSocket server on port $port (max clients: $MAX_CLIENTS)..."
+    @info "Starting WebSocket server on port $port (max clients: $(get_max_clients()))..."
 
     # WebSocket endpoint
     @websocket "/ws" function (ws::HTTP.WebSockets.WebSocket)
@@ -625,8 +620,8 @@ function start_websocket_server!(port::Int=8080)
                     msg = HTTP.WebSockets.receive(ws)
 
                     # Message size limit check
-                    if length(msg) > MAX_MESSAGE_SIZE
-                        @warn "Message too large: $(length(msg)) bytes (max: $MAX_MESSAGE_SIZE)"
+                    if length(msg) > get_max_message_size()
+                        @warn "Message too large: $(length(msg)) bytes (max: $(get_max_message_size()))"
                         safe_send(ws, """{"type":"error","message":"Message too large"}""")
                         break  # Close connection
                     end
@@ -661,7 +656,7 @@ function start_websocket_server!(port::Int=8080)
         return Dict(
             "status" => "ok",
             "clients" => get_client_count(),
-            "max_clients" => MAX_CLIENTS
+            "max_clients" => get_max_clients()
         )
     end
 
