@@ -167,7 +167,7 @@ Le projet repose sur trois principes fondamentaux :
 ```bash
 # Cloner le dépôt
 git clone https://github.com/zakatsuky/ai_dashboard.git
-cd omni-monitor/back-end
+cd ai_dashboard/back-end
 
 # Installer les dépendances Julia
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
@@ -180,7 +180,7 @@ julia --project=. main.jl
 
 ```bash
 # Créer un alias
-echo 'alias omni="julia --project=/chemin/vers/omni-monitor/back-end /chemin/vers/omni-monitor/back-end/main.jl"' >> ~/.bashrc
+echo 'alias omni="julia --project=/chemin/vers/ai_dashboard/back-end /chemin/vers/ai_dashboard/back-end/main.jl"' >> ~/.bashrc
 source ~/.bashrc
 
 # Utiliser
