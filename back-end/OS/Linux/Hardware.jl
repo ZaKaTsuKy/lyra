@@ -140,12 +140,20 @@ function get_hwmon_sensors()::HardwareSensors
         append!(sensors.fans, parse_fans(hwmon_dir, chip))
     end
 
-    # Cache primary fan (first fan with non-zero RPM, or first fan)
-    sensors.primary_cpu_fan_rpm = if !isempty(sensors.fans)
-        active_fans = filter(f -> f.rpm > 0, sensors.fans)
-        !isempty(active_fans) ? active_fans[1].rpm : sensors.fans[1].rpm
-    else
-        0
+    # Cache primary fan (first fan with non-zero RPM, or first fan) - no allocation
+    sensors.primary_cpu_fan_rpm = 0
+    if !isempty(sensors.fans)
+        # Find first active fan without creating intermediate array
+        for fan in sensors.fans
+            if fan.rpm > 0
+                sensors.primary_cpu_fan_rpm = fan.rpm
+                break
+            end
+        end
+        # Fallback to first fan if none are active
+        if sensors.primary_cpu_fan_rpm == 0
+            sensors.primary_cpu_fan_rpm = sensors.fans[1].rpm
+        end
     end
 
     # Cache Vcore (look for common labels)

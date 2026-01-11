@@ -29,6 +29,7 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
     { id: 'sensors', type: 'sensors', position: 5, isVisible: true },
     { id: 'cognitive', type: 'cognitive', position: 6, isVisible: true },
     { id: 'history', type: 'history', position: 7, isVisible: true },
+    { id: 'digital-twin', type: 'digital-twin', position: 8, isVisible: true },
 ];
 
 export const usePreferencesStore = create<PreferencesState>()(

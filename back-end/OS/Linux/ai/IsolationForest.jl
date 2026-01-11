@@ -61,9 +61,14 @@ function build_tree(X::Matrix{Float64}, indices::Vector{Int}, height::Int, max_h
     # Randomly select a feature
     feature = rand(rng, 1:n_features)
 
-    # Get min/max for this feature across current samples
-    feature_values = [X[i, feature] for i in indices]
-    min_val, max_val = extrema(feature_values)
+    # Get min/max for this feature across current samples (in-place, no allocation)
+    min_val = Inf
+    max_val = -Inf
+    for i in indices
+        v = X[i, feature]
+        min_val = min(min_val, v)
+        max_val = max(max_val, v)
+    end
 
     # If all values are the same, create a leaf
     if max_val - min_val < 1e-10

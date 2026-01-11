@@ -71,6 +71,13 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
         description: 'AI-driven behavioral analysis and insights',
         component: lazy(() => import('@/features/monitoring/ai/CognitiveWidget').then(m => ({ default: m.CognitiveWidget }))),
         defaultSize: { w: 1, h: 1 }
+    },
+    'digital-twin': {
+        id: 'digital-twin',
+        title: 'Smart Digital Twin',
+        description: 'Interactive 3D System Visualization',
+        component: lazy(() => import('@/features/digital-twin/DigitalTwinWidget').then(m => ({ default: m.DigitalTwinWidget }))),
+        defaultSize: { w: 2, h: 2 }
     }
 };
 

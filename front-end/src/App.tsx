@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useTelemetryStore } from './store/telemetryStore';
 import { usePreferencesStore } from './store/preferencesStore';
 import {
@@ -21,7 +21,45 @@ import { SystemMetrics } from './components/dashboard/SystemMetrics';
 import { DashboardGrid } from './features/dashboard/components/DashboardGrid';
 import { ThemeToggle } from './shared/components/ThemeToggle';
 
+// ============================================
+// Auto-Refresh Hook (Long-Term Resilience)
+// ============================================
+const REFRESH_HOUR = parseInt(import.meta.env.VITE_REFRESH_HOUR || '4', 10);
+const IDLE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+function useAutoRefresh() {
+  const lastActivityRef = useRef(Date.now());
+
+  useEffect(() => {
+    const updateActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    events.forEach(e => window.addEventListener(e, updateActivity, { passive: true }));
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const isRefreshHour = now.getHours() === REFRESH_HOUR;
+      const isIdle = Date.now() - lastActivityRef.current > IDLE_THRESHOLD_MS;
+
+      if (isRefreshHour && isIdle) {
+        console.log('[AutoRefresh] Performing daily maintenance reload at', now.toISOString());
+        window.location.reload();
+      }
+    }, 60_000); // Check every minute
+
+    return () => {
+      events.forEach(e => window.removeEventListener(e, updateActivity));
+      clearInterval(interval);
+    };
+  }, []);
+}
+
 function App() {
+  // Long-term resilience: auto-refresh at configured hour when idle
+  useAutoRefresh();
+
   const status = useTelemetryStore((s) => s.status);
   const connect = useTelemetryStore((s) => s.connect);
   const disconnect = useTelemetryStore((s) => s.disconnect);
@@ -41,6 +79,8 @@ function App() {
     root.classList.remove('light', 'dark');
     root.classList.add(theme);
   }, [theme]);
+
+
 
 
 

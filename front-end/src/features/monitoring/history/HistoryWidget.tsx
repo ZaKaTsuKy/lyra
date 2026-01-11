@@ -1,20 +1,45 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef, useState, useEffect } from 'react';
 import { formatBytes } from '@/lib/formatters';
 import { MetricChart } from '@/components/charts/MetricChart';
 import { History } from 'lucide-react';
-import { useTelemetryStore, selectors } from "@/store/telemetryStore";
+import { useTelemetryStore, selectors, type HistoryPoint } from "@/store/telemetryStore";
+
+/**
+ * ✅ OPTIMIZED HISTORY WIDGET
+ * 
+ * Key optimizations:
+ * 1. Uses historyVersion selector to know when to update
+ * 2. Throttles history retrieval to every 5 seconds instead of every second
+ * 3. Caches the history array to avoid unnecessary transformations
+ */
+
+const HISTORY_THROTTLE_MS = 5000; // Only update charts every 5 seconds
 
 export const HistoryWidget = memo(function HistoryWidget() {
-    // Utiliser le sélecteur direct (pas de fonction qui crée un nouveau tableau)
-    const history = useTelemetryStore(selectors.history);
+    // Track version changes
+    const historyVersion = useTelemetryStore(selectors.historyVersion);
+    const getHistory = useTelemetryStore((s) => s.getHistory);
 
-    // Optimized: Check only first point instead of iterating all 180 entries
+    // State for throttled history
+    const [throttledHistory, setThrottledHistory] = useState<HistoryPoint[]>([]);
+    const lastUpdateRef = useRef(0);
+
+    // Throttle history updates
+    useEffect(() => {
+        const now = Date.now();
+        if (now - lastUpdateRef.current >= HISTORY_THROTTLE_MS || throttledHistory.length === 0) {
+            lastUpdateRef.current = now;
+            setThrottledHistory(getHistory());
+        }
+    }, [historyVersion, getHistory, throttledHistory.length]);
+
+    // Check GPU availability from first point (memoized properly)
     const hasGpu = useMemo(() => {
-        return history.length > 0 && history[0].gpu_util !== null;
-    }, [history.length > 0 ? history[0]?.gpu_util : null]);
+        return throttledHistory.length > 0 && throttledHistory[0].gpu_util !== null;
+    }, [throttledHistory.length > 0 && throttledHistory[0]?.gpu_util !== null]);
 
-    // Early return APRÈS tous les hooks
-    if (history.length === 0) return null;
+    // Early return after hooks
+    if (throttledHistory.length === 0) return null;
 
     return (
         <div className="space-y-6">
@@ -26,7 +51,7 @@ export const HistoryWidget = memo(function HistoryWidget() {
             <div className={`grid gap-4 ${hasGpu ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-2 lg:grid-cols-3'}`}>
                 <MetricChart
                     title="CPU Load"
-                    data={history}
+                    data={throttledHistory}
                     dataKey="cpu_load1"
                     color="#3b82f6"
                     unit="%"
@@ -34,28 +59,28 @@ export const HistoryWidget = memo(function HistoryWidget() {
                 />
                 <MetricChart
                     title="Memory Usage"
-                    data={history}
+                    data={throttledHistory}
                     dataKey="memory_used_kb"
                     color="#a855f7"
                     formatter={(val) => formatBytes(val * 1024)}
                 />
                 <MetricChart
                     title="Network Rx"
-                    data={history}
+                    data={throttledHistory}
                     dataKey="network_rx_bps"
                     color="#f59e0b"
                     formatter={(val) => `${formatBytes(val)}/s`}
                 />
                 <MetricChart
                     title="Total Disk Read"
-                    data={history}
+                    data={throttledHistory}
                     dataKey="disk_read_bps"
                     color="#10b981"
                     formatter={(val) => `${formatBytes(val)}/s`}
                 />
                 <MetricChart
                     title="Total Disk Write"
-                    data={history}
+                    data={throttledHistory}
                     dataKey="disk_write_bps"
                     color="#f43f5e"
                     formatter={(val) => `${formatBytes(val)}/s`}
@@ -65,7 +90,7 @@ export const HistoryWidget = memo(function HistoryWidget() {
                     <>
                         <MetricChart
                             title="GPU Utilization"
-                            data={history}
+                            data={throttledHistory}
                             dataKey="gpu_util"
                             color="#8b5cf6"
                             unit="%"
@@ -73,7 +98,7 @@ export const HistoryWidget = memo(function HistoryWidget() {
                         />
                         <MetricChart
                             title="GPU Temperature"
-                            data={history}
+                            data={throttledHistory}
                             dataKey="gpu_temp"
                             color="#ef4444"
                             unit="°C"
