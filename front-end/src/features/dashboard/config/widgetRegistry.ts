@@ -78,6 +78,37 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
         description: 'Interactive 3D System Visualization',
         component: lazy(() => import('@/features/digital-twin/DigitalTwinWidget').then(m => ({ default: m.DigitalTwinWidget }))),
         defaultSize: { w: 2, h: 2 }
+    },
+    // ============================================
+    // NEW HARDWARE WIDGETS (Phase 2)
+    // ============================================
+    'sensors-overview': {
+        id: 'sensors-overview',
+        title: 'Thermal Overview',
+        description: 'Heatmap of all temperature sensors',
+        component: lazy(() => import('@/features/monitoring/hardware/SensorsOverviewWidget').then(m => ({ default: m.SensorsOverviewWidget }))),
+        defaultSize: { w: 2, h: 1 }
+    },
+    'fans': {
+        id: 'fans',
+        title: 'System Fans',
+        description: 'All fan speeds with visual indicators',
+        component: lazy(() => import('@/features/monitoring/hardware/FansWidget').then(m => ({ default: m.FansWidget }))),
+        defaultSize: { w: 1, h: 1 }
+    },
+    'voltages': {
+        id: 'voltages',
+        title: 'Power Rails',
+        description: 'Voltage readings and stability',
+        component: lazy(() => import('@/features/monitoring/hardware/VoltagesWidget').then(m => ({ default: m.VoltagesWidget }))),
+        defaultSize: { w: 1, h: 1 }
+    },
+    'storage-health': {
+        id: 'storage-health',
+        title: 'Storage Health',
+        description: 'Disk usage, NVMe temps, and IOPS',
+        component: lazy(() => import('@/features/monitoring/hardware/StorageHealthWidget').then(m => ({ default: m.StorageHealthWidget }))),
+        defaultSize: { w: 1, h: 1 }
     }
 };
 

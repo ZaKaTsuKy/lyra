@@ -170,6 +170,67 @@ export interface CognitiveInsightsDTO {
     state_stability: number;
 }
 
+// ============================================
+// FULL SENSORS DTO (NEW)
+// ============================================
+
+export interface CPUTempsDTO {
+    tctl: number;           // AMD k10temp Tctl
+    tdie: number;           // AMD k10temp Tdie
+    tccd: number[];         // Per-CCD temps (Zen2+)
+    tccd_max: number;       // Max CCD temp
+    package: number;        // Intel coretemp package
+    cores: number[];        // Intel per-core temps
+    critical: number;       // Critical threshold
+}
+
+export interface GPUSensorsDTO {
+    edge_temp: number;      // Edge temperature
+    hotspot_temp: number;   // Junction/Hotspot
+    mem_temp: number;       // Memory temperature
+    vdd_voltage: number;    // GPU core voltage (V)
+    power_w: number;        // Power consumption (W)
+    ppt_limit: number;      // Power limit (W)
+}
+
+export interface NVMeSensorDTO {
+    name: string;           // Device name (nvme0, nvme1)
+    temp_composite: number; // Main composite temp
+    temp_sensor1: number;   // Sensor 1 (optional)
+    temp_sensor2: number;   // Sensor 2 (optional)
+}
+
+export interface TempDTO {
+    label: string;          // e.g., "SYSTIN", "AUXTIN"
+    value: number;          // Temperature in Celsius
+    chip: string;           // Source chip
+    index: number;          // Sensor index
+}
+
+export interface VoltageDTO {
+    label: string;          // e.g., "Vcore", "+12V"
+    value: number;          // Voltage in V
+    chip: string;           // Source chip
+    index: number;          // Sensor index
+}
+
+export interface FanDTO {
+    label: string;          // e.g., "CPU Fan", "System Fan"
+    rpm: number;            // Revolutions per minute
+    chip: string;           // Source chip
+    index: number;          // Sensor index
+}
+
+export interface FullSensorsDTO {
+    cpu_temps: CPUTempsDTO;
+    gpu_sensors: GPUSensorsDTO | null;
+    nvme_sensors: NVMeSensorDTO[];
+    voltages: VoltageDTO[];
+    fans: FanDTO[];
+    temps_generic: TempDTO[];
+    chip_names: string[];
+}
+
 export interface UpdatePayload {
     type: "update";
     cpu: CPUInstant;
@@ -181,10 +242,12 @@ export interface UpdatePayload {
     system: SystemInstant;
     anomaly: AnomalyInstant;
     top_processes: ProcessInstant[];
-    hardware_health: HardwareHealthDTO | null; // NEW
-    cognitive: CognitiveInsightsDTO | null;    // NEW
+    hardware_health: HardwareHealthDTO | null;
+    cognitive: CognitiveInsightsDTO | null;
+    full_sensors: FullSensorsDTO | null;  // NEW
     update_count: number;
     timestamp: number;
 }
 
 export type OmniMessage = InitPayload | UpdatePayload | { type: "error"; message: string } | { type: "shutdown"; message: string };
+

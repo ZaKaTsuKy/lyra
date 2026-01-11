@@ -256,6 +256,89 @@ end
 
 StructTypes.StructType(::Type{CognitiveInsightsDTO}) = StructTypes.Struct()
 
+# ============================
+# FULL SENSORS DTO (NEW)
+# ============================
+
+"""Extended CPU temperatures DTO"""
+struct CPUTempsDTO
+    tctl::Float64
+    tdie::Float64
+    tccd::Vector{Float64}
+    tccd_max::Float64
+    package::Float64
+    cores::Vector{Float64}
+    critical::Float64
+end
+
+StructTypes.StructType(::Type{CPUTempsDTO}) = StructTypes.Struct()
+
+"""GPU sensors DTO"""
+struct GPUSensorsDTO
+    edge_temp::Float64
+    hotspot_temp::Float64
+    mem_temp::Float64
+    vdd_voltage::Float64
+    power_w::Float64
+    ppt_limit::Float64
+end
+
+StructTypes.StructType(::Type{GPUSensorsDTO}) = StructTypes.Struct()
+
+"""NVMe sensor DTO"""
+struct NVMeSensorDTO
+    name::String
+    temp_composite::Float64
+    temp_sensor1::Float64
+    temp_sensor2::Float64
+end
+
+StructTypes.StructType(::Type{NVMeSensorDTO}) = StructTypes.Struct()
+
+"""Generic temperature DTO"""
+struct TempDTO
+    label::String
+    value::Float64
+    chip::String
+    index::Int
+end
+
+StructTypes.StructType(::Type{TempDTO}) = StructTypes.Struct()
+
+"""Voltage DTO"""
+struct VoltageDTO
+    label::String
+    value::Float64
+    chip::String
+    index::Int
+end
+
+StructTypes.StructType(::Type{VoltageDTO}) = StructTypes.Struct()
+
+"""Fan DTO"""
+struct FanDTO
+    label::String
+    rpm::Int
+    chip::String
+    index::Int
+end
+
+StructTypes.StructType(::Type{FanDTO}) = StructTypes.Struct()
+
+"""Full sensors aggregate DTO"""
+struct FullSensorsDTO
+    cpu_temps::CPUTempsDTO
+    gpu_sensors::Union{Nothing,GPUSensorsDTO}
+    nvme_sensors::Vector{NVMeSensorDTO}
+    voltages::Vector{VoltageDTO}
+    fans::Vector{FanDTO}
+    temps_generic::Vector{TempDTO}
+    chip_names::Vector{String}
+end
+
+StructTypes.StructType(::Type{FullSensorsDTO}) = StructTypes.Struct()
+StructTypes.StructType(::Type{Union{Nothing,GPUSensorsDTO}}) = StructTypes.Struct()
+
 """UPDATE_PAYLOAD: Sent every loop iteration (fully immutable)"""
 struct UpdatePayload
     type::String
@@ -268,8 +351,9 @@ struct UpdatePayload
     system::SystemInstant
     anomaly::AnomalyInstant
     top_processes::Vector{ProcessInstant}
-    hardware_health::Union{Nothing,HardwareHealthDTO}  # NEW
-    cognitive::Union{Nothing,CognitiveInsightsDTO}  # NEW
+    hardware_health::Union{Nothing,HardwareHealthDTO}
+    cognitive::Union{Nothing,CognitiveInsightsDTO}
+    full_sensors::Union{Nothing,FullSensorsDTO}  # NEW
     update_count::Int
     timestamp::Float64
 end
@@ -278,6 +362,7 @@ StructTypes.StructType(::Type{UpdatePayload}) = StructTypes.Struct()
 StructTypes.StructType(::Type{Union{Nothing,GPUInstant}}) = StructTypes.Struct()
 StructTypes.StructType(::Type{Union{Nothing,HardwareHealthDTO}}) = StructTypes.Struct()
 StructTypes.StructType(::Type{Union{Nothing,CognitiveInsightsDTO}}) = StructTypes.Struct()
+StructTypes.StructType(::Type{Union{Nothing,FullSensorsDTO}}) = StructTypes.Struct()
 
 # ============================
 # CLIENT MANAGEMENT (Thread-Safe)
@@ -642,6 +727,73 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         CognitiveInsightsDTO(0.0, false, "None", 0.0, 0.0, "Unknown", false, "", 1.0)
     end
 
+    # Full Sensors (NEW)
+    full_sensors = if monitor.full_sensors !== nothing
+        fs = monitor.full_sensors
+
+        # Build CPU temps DTO
+        cpu_temps_dto = CPUTempsDTO(
+            Float64(fs.cpu_temps.tctl),
+            Float64(fs.cpu_temps.tdie),
+            copy(fs.cpu_temps.tccd),
+            Float64(fs.cpu_temps.tccd_max),
+            Float64(fs.cpu_temps.package),
+            copy(fs.cpu_temps.cores),
+            Float64(fs.cpu_temps.critical)
+        )
+
+        # Build GPU sensors DTO
+        gpu_sensors_dto = if fs.gpu_sensors !== nothing
+            gs = fs.gpu_sensors
+            GPUSensorsDTO(
+                Float64(gs.edge_temp),
+                Float64(gs.hotspot_temp),
+                Float64(gs.mem_temp),
+                Float64(gs.vdd_voltage),
+                Float64(gs.power_w),
+                Float64(gs.ppt_limit)
+            )
+        else
+            nothing
+        end
+
+        # Build NVMe DTOs
+        nvme_dtos = [
+            NVMeSensorDTO(String(n.name), Float64(n.temp_composite), Float64(n.temp_sensor1), Float64(n.temp_sensor2))
+            for n in fs.nvme_sensors
+        ]
+
+        # Build voltage DTOs
+        voltage_dtos = [
+            VoltageDTO(String(v.label), Float64(v.value), String(v.chip), Int(v.index))
+            for v in fs.voltages
+        ]
+
+        # Build fan DTOs
+        fan_dtos = [
+            FanDTO(String(f.label), Int(f.rpm), String(f.chip), Int(f.index))
+            for f in fs.fans
+        ]
+
+        # Build temp DTOs
+        temp_dtos = [
+            TempDTO(String(t.label), Float64(t.value), String(t.chip), Int(t.index))
+            for t in fs.temps_generic
+        ]
+
+        FullSensorsDTO(
+            cpu_temps_dto,
+            gpu_sensors_dto,
+            nvme_dtos,
+            voltage_dtos,
+            fan_dtos,
+            temp_dtos,
+            copy(fs.chip_names)
+        )
+    else
+        nothing
+    end
+
     return UpdatePayload(
         "update",
         cpu,
@@ -655,6 +807,7 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         top_processes,
         hardware_health,
         cognitive,
+        full_sensors,
         Int(monitor.update_count),
         Float64(time())
     )
