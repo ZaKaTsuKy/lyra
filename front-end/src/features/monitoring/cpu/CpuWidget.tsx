@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useTelemetryStore } from "@/store/telemetryStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Badge } from "@/shared/components/ui/badge";
@@ -5,7 +6,7 @@ import { ProgressBar } from "@/shared/components/ui/progress-bar";
 import { Cpu, Thermometer } from "lucide-react";
 import { CpuHeatmap } from "@/components/charts/CpuHeatmap";
 
-export function CpuWidget() {
+export const CpuWidget = memo(function CpuWidget() {
     const liveData = useTelemetryStore((s) => s.liveData);
     const staticInfo = useTelemetryStore((s) => s.staticInfo);
 
@@ -38,4 +39,4 @@ export function CpuWidget() {
             </CardContent>
         </Card>
     );
-}
+});

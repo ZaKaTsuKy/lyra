@@ -499,6 +499,37 @@ function update_rate!(tracker::RateTracker, current_value::Int)
 end
 
 # ============================
+# HARDWARE SENSORS (NEW - for voltages and fans)
+# ============================
+
+"""Voltage sensor reading"""
+struct VoltageSensor
+    label::String       # e.g., "Vcore", "+12V"
+    value::Float64      # Volts
+    chip::String        # e.g., "nct6775"
+    index::Int          # Sensor index (in0, in1, etc.)
+end
+
+"""Fan sensor reading"""
+struct FanSensor
+    label::String       # e.g., "CPU Fan", "System Fan"
+    rpm::Int            # Revolutions per minute
+    chip::String        # e.g., "nct6775"
+    index::Int          # Sensor index (fan1, fan2, etc.)
+end
+
+"""Aggregated hardware sensors snapshot"""
+mutable struct HardwareSensors
+    voltages::Vector{VoltageSensor}
+    fans::Vector{FanSensor}
+    timestamp::Float64
+    primary_cpu_fan_rpm::Int        # Cached for quick access
+    vcore_voltage::Float64          # Cached for quick access
+end
+
+HardwareSensors() = HardwareSensors(VoltageSensor[], FanSensor[], time(), 0, 0.0)
+
+# ============================
 # SYSTEM MONITOR ROOT
 # ============================
 
@@ -540,6 +571,9 @@ mutable struct SystemMonitor
     ctxt_rate::RateTracker
     intr_rate::RateTracker
 
+    # NEW: Hardware sensors (voltages, fans)
+    hardware::Union{Nothing,HardwareSensors}
+
     # Timestamps
     last_update::Float64
     update_count::Int
@@ -569,6 +603,7 @@ function SystemMonitor()
         StaticCache(),
         RateTracker(),
         RateTracker(),
+        nothing,  # hardware sensors (initialized later)
         time(),
         0
     )

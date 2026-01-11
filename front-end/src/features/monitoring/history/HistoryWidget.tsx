@@ -1,24 +1,20 @@
+import { memo, useMemo } from 'react';
 import { formatBytes } from '@/lib/formatters';
 import { MetricChart } from '@/components/charts/MetricChart';
-import type { UpdatePayload } from '@/types/omni';
 import { History } from 'lucide-react';
-import { useCallback } from 'react';
-import { useTelemetryStore } from "@/store/telemetryStore";
+import { useTelemetryStore, selectors } from "@/store/telemetryStore";
 
-export function HistoryWidget() {
-    const history = useTelemetryStore((s) => s.history);
+export const HistoryWidget = memo(function HistoryWidget() {
+    // Utiliser le sélecteur direct (pas de fonction qui crée un nouveau tableau)
+    const history = useTelemetryStore(selectors.history);
 
-    // ⚠️ IMPORTANT: All hooks MUST be called before any early return
-    // This is a React rule: hooks must be called in the same order every render
-    const getTotalDiskRead = useCallback((d: UpdatePayload) => d.disks.reduce((acc, disk) => acc + disk.read_bps, 0), []);
-    const getTotalDiskWrite = useCallback((d: UpdatePayload) => d.disks.reduce((acc, disk) => acc + disk.write_bps, 0), []);
-    const getGpuUtil = useCallback((d: UpdatePayload) => d.gpu ? d.gpu.util : 0, []);
-    const getGpuTemp = useCallback((d: UpdatePayload) => d.gpu ? d.gpu.temp : 0, []);
+    // Optimized: Check only first point instead of iterating all 180 entries
+    const hasGpu = useMemo(() => {
+        return history.length > 0 && history[0].gpu_util !== null;
+    }, [history.length > 0 ? history[0]?.gpu_util : null]);
 
-    // Early return AFTER all hooks
-    if (!history || history.length === 0) return null;
-
-    const hasGpu = history.some(h => h.gpu !== null);
+    // Early return APRÈS tous les hooks
+    if (history.length === 0) return null;
 
     return (
         <div className="space-y-6">
@@ -31,7 +27,7 @@ export function HistoryWidget() {
                 <MetricChart
                     title="CPU Load"
                     data={history}
-                    dataKey="cpu.load1"
+                    dataKey="cpu_load1"
                     color="#3b82f6"
                     unit="%"
                     range={[0, 100]}
@@ -39,28 +35,28 @@ export function HistoryWidget() {
                 <MetricChart
                     title="Memory Usage"
                     data={history}
-                    dataKey="memory.used_kb"
+                    dataKey="memory_used_kb"
                     color="#a855f7"
                     formatter={(val) => formatBytes(val * 1024)}
                 />
                 <MetricChart
                     title="Network Rx"
                     data={history}
-                    dataKey="network.rx_bps"
+                    dataKey="network_rx_bps"
                     color="#f59e0b"
                     formatter={(val) => `${formatBytes(val)}/s`}
                 />
                 <MetricChart
                     title="Total Disk Read"
                     data={history}
-                    accessor={getTotalDiskRead}
+                    dataKey="disk_read_bps"
                     color="#10b981"
                     formatter={(val) => `${formatBytes(val)}/s`}
                 />
                 <MetricChart
                     title="Total Disk Write"
                     data={history}
-                    accessor={getTotalDiskWrite}
+                    dataKey="disk_write_bps"
                     color="#f43f5e"
                     formatter={(val) => `${formatBytes(val)}/s`}
                 />
@@ -70,7 +66,7 @@ export function HistoryWidget() {
                         <MetricChart
                             title="GPU Utilization"
                             data={history}
-                            accessor={getGpuUtil}
+                            dataKey="gpu_util"
                             color="#8b5cf6"
                             unit="%"
                             range={[0, 100]}
@@ -78,7 +74,7 @@ export function HistoryWidget() {
                         <MetricChart
                             title="GPU Temperature"
                             data={history}
-                            accessor={getGpuTemp}
+                            dataKey="gpu_temp"
                             color="#ef4444"
                             unit="°C"
                         />
@@ -87,4 +83,4 @@ export function HistoryWidget() {
             </div>
         </div>
     );
-}
+});

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useTelemetryStore } from "@/store/telemetryStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Badge } from "@/shared/components/ui/badge";
@@ -5,11 +6,14 @@ import { ProgressBar } from "@/shared/components/ui/progress-bar";
 import { Server } from "lucide-react";
 import { formatBytes } from "@/lib/formatters";
 
-export function MemoryWidget() {
+export const MemoryWidget = memo(function MemoryWidget() {
     const liveData = useTelemetryStore((s) => s.liveData);
 
     const ramUsagePercent = liveData ? (liveData.memory.used_kb / liveData.memory.total_kb) * 100 : 0;
-    const swapUsage = liveData ? (liveData.memory.swap_used_kb / liveData.memory.swap_total_kb) * 100 : 0;
+    // Fix: Guard against division by zero when swap is not configured
+    const swapUsage = liveData && liveData.memory.swap_total_kb > 0
+        ? (liveData.memory.swap_used_kb / liveData.memory.swap_total_kb) * 100
+        : 0;
 
     return (
         <Card className="h-full">
@@ -43,4 +47,4 @@ export function MemoryWidget() {
             </CardContent>
         </Card>
     );
-}
+});

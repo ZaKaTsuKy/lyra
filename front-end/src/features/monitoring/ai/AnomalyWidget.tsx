@@ -1,9 +1,10 @@
+import { memo } from "react";
 import { useTelemetryStore } from "@/store/telemetryStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { ProgressBar } from "@/shared/components/ui/progress-bar";
 import { Brain, Activity } from "lucide-react";
 
-export function AnomalyWidget() {
+export const AnomalyWidget = memo(function AnomalyWidget() {
     const liveData = useTelemetryStore((s) => s.liveData);
     const anomalyValue = liveData?.anomaly.overall ?? 0;
     const regime = liveData?.anomaly.regime ?? 'Unknown';
@@ -43,4 +44,4 @@ export function AnomalyWidget() {
             </CardContent>
         </Card>
     );
-}
+});

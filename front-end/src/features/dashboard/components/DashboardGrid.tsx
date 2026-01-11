@@ -14,8 +14,9 @@ import {
 } from '@dnd-kit/sortable';
 import { usePreferencesStore } from '@/store/preferencesStore';
 import { SortableWidget } from './SortableWidget';
-import { Suspense } from 'react';
+import { Suspense, useMemo } from 'react';
 import { Skeleton } from '@/shared/components/ui/skeleton';
+import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
 import { getWidgetDefinition } from '../config/widgetRegistry';
 
 export function DashboardGrid() {
@@ -28,6 +29,9 @@ export function DashboardGrid() {
             coordinateGetter: sortableKeyboardCoordinates,
         })
     );
+
+    // Memoize widget IDs to prevent array recreation on every render
+    const widgetIds = useMemo(() => widgets.map(w => w.id), [widgets]);
 
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
@@ -44,7 +48,7 @@ export function DashboardGrid() {
             onDragEnd={handleDragEnd}
         >
             <SortableContext
-                items={widgets.map(w => w.id)}
+                items={widgetIds}
                 strategy={rectSortingStrategy}
             >
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 auto-rows-[minmax(200px,auto)]">
@@ -57,9 +61,11 @@ export function DashboardGrid() {
 
                         return (
                             <SortableWidget key={widget.id} id={widget.id}>
-                                <Suspense fallback={<Skeleton className="h-full w-full rounded-xl" />}>
-                                    <Component />
-                                </Suspense>
+                                <ErrorBoundary>
+                                    <Suspense fallback={<Skeleton className="h-full w-full rounded-xl" />}>
+                                        <Component />
+                                    </Suspense>
+                                </ErrorBoundary>
                             </SortableWidget>
                         );
                     })}

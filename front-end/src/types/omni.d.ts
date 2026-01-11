@@ -144,6 +144,32 @@ export interface ProcessInstant {
     state: string; // Char in Julia, string in JSON
 }
 
+// New DTOs
+export interface HardwareHealthDTO {
+    thermal_efficiency: number;
+    fan_status: string;
+    voltage_stability: number;
+    cooling_headroom: number;
+    primary_fan_rpm: number;
+    vcore_voltage: number;
+    dry_thermal_paste: boolean;
+    dusty_fan: boolean;
+    unstable_voltage: boolean;
+    diagnostics: string[];
+}
+
+export interface CognitiveInsightsDTO {
+    iforest_score: number;
+    oscillation_detected: boolean;
+    oscillation_type: string;
+    spectral_entropy_cpu: number;
+    spectral_entropy_fan: number;
+    behavioral_state: string;
+    behavioral_anomaly: boolean;
+    behavioral_description: string;
+    state_stability: number;
+}
+
 export interface UpdatePayload {
     type: "update";
     cpu: CPUInstant;
@@ -155,6 +181,8 @@ export interface UpdatePayload {
     system: SystemInstant;
     anomaly: AnomalyInstant;
     top_processes: ProcessInstant[];
+    hardware_health: HardwareHealthDTO | null; // NEW
+    cognitive: CognitiveInsightsDTO | null;    // NEW
     update_count: number;
     timestamp: number;
 }

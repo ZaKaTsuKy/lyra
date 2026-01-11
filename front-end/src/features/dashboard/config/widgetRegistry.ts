@@ -50,6 +50,27 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
         description: 'aggregated charts for system history',
         component: HistoryWidget,
         defaultSize: { w: 2, h: 1 }
+    },
+    'hardware-health': {
+        id: 'hardware-health',
+        title: 'Hardware Health',
+        description: 'Physical diagnostics and thermal efficiency',
+        component: lazy(() => import('@/features/monitoring/hardware/HardwareHealthCard').then(m => ({ default: m.HardwareHealthCard }))),
+        defaultSize: { w: 1, h: 1 }
+    },
+    'sensors': {
+        id: 'sensors',
+        title: 'Sensors',
+        description: 'Voltage and Fan speed readings',
+        component: lazy(() => import('@/features/monitoring/hardware/SensorsWidget').then(m => ({ default: m.SensorsWidget }))),
+        defaultSize: { w: 1, h: 1 }
+    },
+    'cognitive': {
+        id: 'cognitive',
+        title: 'Cognitive Engine',
+        description: 'AI-driven behavioral analysis and insights',
+        component: lazy(() => import('@/features/monitoring/ai/CognitiveWidget').then(m => ({ default: m.CognitiveWidget }))),
+        defaultSize: { w: 1, h: 1 }
     }
 };
 

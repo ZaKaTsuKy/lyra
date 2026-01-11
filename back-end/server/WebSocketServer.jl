@@ -225,6 +225,37 @@ end
 
 StructTypes.StructType(::Type{ProcessInstant}) = StructTypes.Struct()
 
+"""Hardware health status for frontend (NEW)"""
+struct HardwareHealthDTO
+    thermal_efficiency::Float64     # 0.0 - 1.0
+    fan_status::String              # "healthy", "degraded", "failing", "stopped"
+    voltage_stability::Float64      # 0.0 - 1.0
+    cooling_headroom::Float64       # Degrees before throttle
+    primary_fan_rpm::Int
+    vcore_voltage::Float64
+    dry_thermal_paste::Bool
+    dusty_fan::Bool
+    unstable_voltage::Bool
+    diagnostics::Vector{String}
+end
+
+StructTypes.StructType(::Type{HardwareHealthDTO}) = StructTypes.Struct()
+
+"""Cognitive AI insights for frontend (NEW)"""
+struct CognitiveInsightsDTO
+    iforest_score::Float64
+    oscillation_detected::Bool
+    oscillation_type::String
+    spectral_entropy_cpu::Float64
+    spectral_entropy_fan::Float64
+    behavioral_state::String
+    behavioral_anomaly::Bool
+    behavioral_description::String
+    state_stability::Float64
+end
+
+StructTypes.StructType(::Type{CognitiveInsightsDTO}) = StructTypes.Struct()
+
 """UPDATE_PAYLOAD: Sent every loop iteration (fully immutable)"""
 struct UpdatePayload
     type::String
@@ -237,12 +268,16 @@ struct UpdatePayload
     system::SystemInstant
     anomaly::AnomalyInstant
     top_processes::Vector{ProcessInstant}
+    hardware_health::Union{Nothing,HardwareHealthDTO}  # NEW
+    cognitive::Union{Nothing,CognitiveInsightsDTO}  # NEW
     update_count::Int
     timestamp::Float64
 end
 
 StructTypes.StructType(::Type{UpdatePayload}) = StructTypes.Struct()
 StructTypes.StructType(::Type{Union{Nothing,GPUInstant}}) = StructTypes.Struct()
+StructTypes.StructType(::Type{Union{Nothing,HardwareHealthDTO}}) = StructTypes.Struct()
+StructTypes.StructType(::Type{Union{Nothing,CognitiveInsightsDTO}}) = StructTypes.Struct()
 
 # ============================
 # CLIENT MANAGEMENT (Thread-Safe)
@@ -553,6 +588,60 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         for p in procs_sorted[1:min(5, length(procs_sorted))]
     ]
 
+    # Hardware health (NEW)
+    hardware_health = if monitor.hardware !== nothing
+        hw = monitor.hardware
+        health = get_hardware_health()
+        HardwareHealthDTO(
+            Float64(health.thermal_efficiency),
+            fan_status_string(health.fan_status),
+            Float64(health.voltage_stability),
+            Float64(health.cooling_headroom),
+            Int(hw.primary_cpu_fan_rpm),
+            Float64(hw.vcore_voltage),
+            Bool(health.dry_thermal_paste),
+            Bool(health.dusty_fan),
+            Bool(health.unstable_voltage),
+            copy(health.diagnostics)
+        )
+    else
+        nothing
+    end
+
+    # Cognitive Insights (NEW)
+    cognitive = try
+        # Oscillation type
+        oscillation_type = if ai_state.cpu_oscillation_detected
+            "CPU Throttling"
+        elseif ai_state.fan_hunting_detected
+            "Fan Hunting"
+        else
+            "None"
+        end
+
+        # Spectral entropy
+        cpu_spec = get_spectral_result(ai_state.fft_cpu)
+        fan_spec = get_spectral_result(ai_state.fft_fan)
+
+        # Behavioral stability
+        beh_res = get_behavioral_result(ai_state.markov)
+
+        CognitiveInsightsDTO(
+            Float64(ai_state.iforest_score),
+            Bool(ai_state.cpu_oscillation_detected || ai_state.fan_hunting_detected),
+            String(oscillation_type),
+            Float64(cpu_spec.spectral_entropy),
+            Float64(fan_spec.spectral_entropy),
+            state_name(ai_state.markov.current_state),
+            Bool(ai_state.behavioral_anomaly),
+            String(ai_state.behavioral_anomaly_desc),
+            Float64(beh_res.state_stability)
+        )
+    catch e
+        # Fallback if AI state isn't fully initialized
+        CognitiveInsightsDTO(0.0, false, "None", 0.0, 0.0, "Unknown", false, "", 1.0)
+    end
+
     return UpdatePayload(
         "update",
         cpu,
@@ -564,6 +653,8 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         system,
         anomaly,
         top_processes,
+        hardware_health,
+        cognitive,
         Int(monitor.update_count),
         Float64(time())
     )

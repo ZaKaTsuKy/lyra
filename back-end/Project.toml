@@ -1,5 +1,6 @@
 [deps]
 DotEnv = "4dc1fcf4-5e3b-5448-94ab-0c38ec0385c1"
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 Oxygen = "df9a0d86-3283-4920-82dc-4555fc0d1d8b"

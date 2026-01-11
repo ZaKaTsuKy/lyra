@@ -25,7 +25,10 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
     { id: 'memory', type: 'memory', position: 1, isVisible: true },
     { id: 'network', type: 'network', position: 2, isVisible: true },
     { id: 'anomaly', type: 'anomaly', position: 3, isVisible: true },
-    { id: 'history', type: 'history', position: 4, isVisible: true },
+    { id: 'hardware-health', type: 'hardware-health', position: 4, isVisible: true },
+    { id: 'sensors', type: 'sensors', position: 5, isVisible: true },
+    { id: 'cognitive', type: 'cognitive', position: 6, isVisible: true },
+    { id: 'history', type: 'history', position: 7, isVisible: true },
 ];
 
 export const usePreferencesStore = create<PreferencesState>()(

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useTelemetryStore } from "@/store/telemetryStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Badge } from "@/shared/components/ui/badge";
@@ -5,7 +6,7 @@ import { Skeleton } from "@/shared/components/ui/skeleton";
 import { Wifi } from "lucide-react";
 import { formatBytes } from "@/lib/formatters";
 
-export function NetworkWidget() {
+export const NetworkWidget = memo(function NetworkWidget() {
     const liveData = useTelemetryStore((s) => s.liveData);
 
     return (
@@ -33,4 +34,4 @@ export function NetworkWidget() {
             </CardContent>
         </Card>
     );
-}
+});

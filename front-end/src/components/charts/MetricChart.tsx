@@ -1,48 +1,66 @@
 import { ResponsiveContainer, AreaChart, Area, XAxis, Tooltip, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
-import type { UpdatePayload } from '@/types/omni';
-import { memo, useId } from 'react';
+import type { HistoryPoint } from '@/store/telemetryStore';
+import { memo, useId, useMemo } from 'react';
 
 interface MetricChartProps {
     title: string;
-    data: UpdatePayload[];
-    dataKey?: string;
-    accessor?: (data: UpdatePayload) => number;
+    data: HistoryPoint[];
+    dataKey: keyof HistoryPoint;
     color?: string;
     unit?: string;
     range?: [number | 'auto' | 'dataMin' | 'dataMax', number | 'auto' | 'dataMin' | 'dataMax'];
     formatter?: (val: number) => string;
 }
 
+// Comparaison optimisée pour memo
+function arePropsEqual(prev: MetricChartProps, next: MetricChartProps): boolean {
+    // Si les deux sont vides, pas de re-render
+    if (prev.data.length === 0 && next.data.length === 0) return true;
+
+    // Si la longueur change, re-render
+    if (prev.data.length !== next.data.length) return false;
+
+    // Comparer uniquement le dernier timestamp (le plus récent)
+    const prevLast = prev.data[prev.data.length - 1];
+    const nextLast = next.data[next.data.length - 1];
+
+    // Comparer les props statiques et le dernier point
+    return (
+        prevLast?.timestamp === nextLast?.timestamp &&
+        prev.title === next.title &&
+        prev.color === next.color &&
+        prev.dataKey === next.dataKey
+    );
+}
+
 export const MetricChart = memo(function MetricChart({
     title,
     data,
-    dataKey = "",
+    dataKey,
     color = "#3b82f6",
     unit = "",
     range = [0, 'auto'],
     formatter = (val: number) => val.toFixed(1),
-    accessor
 }: MetricChartProps) {
     const gradientId = useId();
 
-    // Helper to extract nested keys (e.g. "cpu.load1")
-    const getValue = (obj: any, path: string) => {
-        if (!path) return 0;
-        return path.split('.').reduce((acc, part) => acc && acc[part], obj);
-    };
+    // Mémoïser la transformation des données
+    const chartData = useMemo(() => {
+        return data.map(d => ({
+            timestamp: d.timestamp,
+            value: d[dataKey] as number ?? 0
+        }));
+    }, [data, dataKey]);
 
-    const chartData = data.map(d => ({
-        timestamp: d.timestamp,
-        value: accessor ? accessor(d) : getValue(d, dataKey)
-    }));
-
-    // Don't render if no data (prevents Recharts width/height warning)
+    // État de chargement
     if (chartData.length === 0) {
         return (
             <Card className="h-full">
                 <CardHeader className="p-4 pb-0">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                        {title}
+                    </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 h-[150px] flex items-center justify-center text-muted-foreground text-sm">
                     Waiting for data...
@@ -54,7 +72,9 @@ export const MetricChart = memo(function MetricChart({
     return (
         <Card className="h-full">
             <CardHeader className="p-4 pb-0">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                    {title}
+                </CardTitle>
             </CardHeader>
             <CardContent className="p-0 h-[150px]">
                 <ResponsiveContainer width="100%" height="100%" minHeight={100}>
@@ -65,14 +85,8 @@ export const MetricChart = memo(function MetricChart({
                                 <stop offset="95%" stopColor={color} stopOpacity={0} />
                             </linearGradient>
                         </defs>
-                        <XAxis
-                            dataKey="timestamp"
-                            hide
-                        />
-                        <YAxis
-                            hide
-                            domain={range}
-                        />
+                        <XAxis dataKey="timestamp" hide />
+                        <YAxis hide domain={range} />
                         <Tooltip
                             contentStyle={{
                                 backgroundColor: "hsl(var(--background))",
@@ -99,16 +113,4 @@ export const MetricChart = memo(function MetricChart({
             </CardContent>
         </Card>
     );
-}, (prev, next) => {
-    // Custom comparison: Only re-render if data length changes or last timestamp changes
-    // This is a crucial optimization for high-frequency updates
-    if (prev.data.length === 0 && next.data.length === 0) return true;
-    if (prev.data.length !== next.data.length) return false;
-
-    const prevLast = prev.data[prev.data.length - 1];
-    const nextLast = next.data[next.data.length - 1];
-
-    return prevLast?.timestamp === nextLast?.timestamp &&
-        prev.title === next.title &&
-        prev.color === next.color;
-});
+}, arePropsEqual);

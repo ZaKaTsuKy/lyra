@@ -34,6 +34,12 @@ include("OS/Linux/DiskIO.jl")
 include("OS/Linux/Processes.jl")
 include("OS/Linux/Battery.jl")
 include("OS/Linux/SystemUtils.jl")
+include("OS/Linux/Hardware.jl")
+include("OS/Linux/ai/IsolationForest.jl")
+include("OS/Linux/ai/Spectral.jl")
+include("OS/Linux/ai/Behavioral.jl")
+include("OS/Linux/ai/Physical.jl")
+include("OS/Linux/ai/Simulation.jl")
 include("OS/Linux/AI.jl")
 
 # UI
@@ -89,6 +95,9 @@ function collect_all_metrics!(monitor::SystemMonitor)
 
     # System info
     update_system!(monitor)
+
+    # Hardware sensors (voltages, fans) - before AI
+    update_hardware!(monitor)
 
     # AI anomaly detection
     update_anomaly!(monitor)
