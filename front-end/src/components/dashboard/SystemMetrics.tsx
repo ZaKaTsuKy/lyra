@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Server, Cpu, HardDrive, Clock, Layers } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
+import { Skeleton } from "@/shared/components/ui/skeleton";
 import { formatDuration } from "@/lib/formatters";
 import type { SystemInstant, StaticDTO } from "@/types/omni";
 

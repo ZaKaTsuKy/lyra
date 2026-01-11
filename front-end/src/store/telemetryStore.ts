@@ -22,7 +22,7 @@ const HISTORY_SIZE = 60;
 const RECONNECT_INTERVAL = 3000;
 const MAX_RETRIES = 10;
 
-export const useOmniStore = create<OmniState>((set, get) => ({
+export const useTelemetryStore = create<OmniState>((set, get) => ({
     socket: null,
     status: 'disconnected',
     staticInfo: null,

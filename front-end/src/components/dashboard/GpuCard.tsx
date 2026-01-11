@@ -1,8 +1,8 @@
 import { memo } from "react";
 import { Zap, Thermometer, Database, Activity } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ProgressBar } from "@/components/ui/progress-bar";
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { ProgressBar } from '@/shared/components/ui/progress-bar';
+import { Badge } from '@/shared/components/ui/badge';
 import { formatBytes } from "@/lib/formatters";
 import type { GPUInstant } from "@/types/omni";
 

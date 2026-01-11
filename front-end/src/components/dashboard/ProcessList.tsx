@@ -1,6 +1,6 @@
 import { memo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ProgressBar } from "@/components/ui/progress-bar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
+import { ProgressBar } from "@/shared/components/ui/progress-bar";
 import { formatBytes } from "@/lib/formatters";
 import type { ProcessInstant } from "@/types/omni";
 import { Activity } from "lucide-react";
