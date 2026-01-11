@@ -81,10 +81,10 @@ export interface DiskInstant {
     read_bps: number;
     write_bps: number;
     // New fields
-    read_iops?: number;
-    write_iops?: number;
-    avg_wait_ms?: number;
-    io_wait_pct?: number;
+    read_iops: number;
+    write_iops: number;
+    avg_wait_ms: number;
+    io_wait_pct: number;
 }
 
 export interface BatteryInstant {
@@ -126,14 +126,14 @@ export interface AnomalyInstant {
     io_spike: boolean;
     net_spike: boolean;
     // New fields
-    cpu_trend?: string;
-    mem_trend?: string;
-    io_trend?: string;
-    net_trend?: string;
-    regime?: string;
-    predictions?: PredictionDTO[];
-    coherence_temp_alert?: boolean;
-    coherence_io_alert?: boolean;
+    cpu_trend: string;
+    mem_trend: string;
+    io_trend: string;
+    net_trend: string;
+    regime: string;
+    predictions: PredictionDTO[];
+    coherence_temp_alert: boolean;
+    coherence_io_alert: boolean;
 }
 
 export interface ProcessInstant {

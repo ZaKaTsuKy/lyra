@@ -1,35 +1,40 @@
 import { ResponsiveContainer, AreaChart, Area, XAxis, Tooltip, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { UpdatePayload } from '@/types/omni';
+import { memo, useId } from 'react';
 
 interface MetricChartProps {
     title: string;
     data: UpdatePayload[];
-    dataKey: string;
+    dataKey?: string;
+    accessor?: (data: UpdatePayload) => number;
     color?: string;
     unit?: string;
     range?: [number | 'auto' | 'dataMin' | 'dataMax', number | 'auto' | 'dataMin' | 'dataMax'];
     formatter?: (val: number) => string;
 }
 
-export function MetricChart({
+export const MetricChart = memo(function MetricChart({
     title,
     data,
-    dataKey,
+    dataKey = "",
     color = "#3b82f6",
     unit = "",
     range = [0, 'auto'],
-    formatter = (val: number) => val.toFixed(1)
+    formatter = (val: number) => val.toFixed(1),
+    accessor
 }: MetricChartProps) {
+    const gradientId = useId();
 
     // Helper to extract nested keys (e.g. "cpu.load1")
     const getValue = (obj: any, path: string) => {
+        if (!path) return 0;
         return path.split('.').reduce((acc, part) => acc && acc[part], obj);
     };
 
     const chartData = data.map(d => ({
         timestamp: d.timestamp,
-        value: getValue(d, dataKey)
+        value: accessor ? accessor(d) : getValue(d, dataKey)
     }));
 
     // Don't render if no data (prevents Recharts width/height warning)
@@ -55,7 +60,7 @@ export function MetricChart({
                 <ResponsiveContainer width="100%" height="100%" minHeight={100}>
                     <AreaChart data={chartData}>
                         <defs>
-                            <linearGradient id={`color-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+                            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor={color} stopOpacity={0.3} />
                                 <stop offset="95%" stopColor={color} stopOpacity={0} />
                             </linearGradient>
@@ -85,7 +90,7 @@ export function MetricChart({
                             dataKey="value"
                             stroke={color}
                             fillOpacity={1}
-                            fill={`url(#color-${dataKey})`}
+                            fill={`url(#${gradientId})`}
                             strokeWidth={2}
                             isAnimationActive={false}
                         />
@@ -94,4 +99,16 @@ export function MetricChart({
             </CardContent>
         </Card>
     );
-}
+}, (prev, next) => {
+    // Custom comparison: Only re-render if data length changes or last timestamp changes
+    // This is a crucial optimization for high-frequency updates
+    if (prev.data.length === 0 && next.data.length === 0) return true;
+    if (prev.data.length !== next.data.length) return false;
+
+    const prevLast = prev.data[prev.data.length - 1];
+    const nextLast = next.data[next.data.length - 1];
+
+    return prevLast?.timestamp === nextLast?.timestamp &&
+        prev.title === next.title &&
+        prev.color === next.color;
+});

@@ -67,6 +67,8 @@ export const useOmniStore = create<OmniState>((set, get) => ({
             console.log('Connected to Omni Monitor');
         };
 
+        let lastUpdate = 0;
+
         ws.onmessage = (event) => {
             try {
                 if (event.data === 'pong') return;
@@ -76,16 +78,37 @@ export const useOmniStore = create<OmniState>((set, get) => ({
                 if (data.type === 'init') {
                     set({ staticInfo: data });
                 } else if (data.type === 'update') {
-                    set((state) => {
-                        const newHistory = [...state.history, data];
-                        if (newHistory.length > HISTORY_SIZE) {
-                            newHistory.shift();
-                        }
-                        return {
-                            liveData: data,
-                            history: newHistory,
-                        };
-                    });
+                    // Update history in background? 
+                    // To throttle effectively, we only trigger set() every 1000ms
+                    const now = Date.now();
+                    if (now - lastUpdate > 1000) {
+                        set((state) => {
+                            const newHistory = [...state.history, data];
+                            if (newHistory.length > HISTORY_SIZE) {
+                                newHistory.shift();
+                            }
+                            return {
+                                liveData: data,
+                                history: newHistory,
+                            };
+                        });
+                        lastUpdate = now;
+                    } else {
+                        // silently update history without re-render?
+                        // For now, simpler to just drop intermediate frames for rendering, 
+                        // knowing that history might have gaps in state but backend sends 2Hz.
+                        // Better: Accumulate history properly even if we don't render.
+
+                        set((state) => {
+                            const newHistory = [...state.history, data];
+                            if (newHistory.length > HISTORY_SIZE) {
+                                newHistory.shift();
+                            }
+                            // Only update history, NOT liveData (which triggers re-renders)
+                            return { history: newHistory };
+                        });
+                    }
+
                 } else if (data.type === 'error') {
                     console.error('Server error:', data.message);
                     set({ error: data.message });

@@ -28,6 +28,7 @@ import { SystemMetrics } from './components/dashboard/SystemMetrics';
 // Charts
 import { MetricChart } from './components/charts/MetricChart';
 import { CpuHeatmap } from './components/charts/CpuHeatmap';
+import { HistoryCharts } from './components/charts/HistoryCharts';
 
 function App() {
   const status = useOmniStore((s) => s.status);
@@ -87,7 +88,7 @@ function App() {
 
       {/* HEADER */}
       <header className="mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b pb-6">
-        <div>
+        <div className="transition-opacity duration-500 ease-in-out">
           <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
             Omni Monitor
           </h1>
@@ -118,7 +119,7 @@ function App() {
 
       {/* AI ALERT BANNER */}
       {metrics.criticalPrediction && (
-        <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
+        <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center gap-4 transition-all duration-300 animate-in fade-in slide-in-from-top-4">
           <AlertTriangle className="w-6 h-6 text-red-500 animate-pulse" />
           <div>
             <h3 className="font-bold text-red-500">Critical Anomaly Predicted</h3>
@@ -226,6 +227,17 @@ function App() {
                 <div className="text-2xl font-bold">{(metrics.anomalyValue * 100).toFixed(0)}%</div>
                 <span className="text-xs text-muted-foreground">Anomaly Score</span>
               </div>
+
+              {/* AI Trends */}
+              {liveData && (
+                <div className="grid grid-cols-4 gap-1 mt-2 mb-2 text-[10px] text-muted-foreground text-center">
+                  <div title="CPU Trend">CPU {liveData.anomaly.cpu_trend === 'up' ? '↑' : liveData.anomaly.cpu_trend === 'down' ? '↓' : '→'}</div>
+                  <div title="Mem Trend">MEM {liveData.anomaly.mem_trend === 'up' ? '↑' : liveData.anomaly.mem_trend === 'down' ? '↓' : '→'}</div>
+                  <div title="IO Trend">IO {liveData.anomaly.io_trend === 'up' ? '↑' : liveData.anomaly.io_trend === 'down' ? '↓' : '→'}</div>
+                  <div title="Net Trend">NET {liveData.anomaly.net_trend === 'up' ? '↑' : liveData.anomaly.net_trend === 'down' ? '↓' : '→'}</div>
+                </div>
+              )}
+
               <div className="mt-2 flex items-center gap-2">
                 <Activity className="w-3 h-3 text-muted-foreground" />
                 <span className="text-xs font-medium uppercase text-muted-foreground">{metrics.regime}</span>
@@ -243,9 +255,11 @@ function App() {
 
         {/* HISTORY CHARTS SECTION */}
         <section>
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+          <HistoryCharts history={history} />
+
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2 mt-8">
             <History className="w-5 h-5 text-muted-foreground" />
-            History (Last 3 Minutes)
+            Core Metrics (Last 3 Minutes)
           </h2>
           <div className="grid gap-4 md:grid-cols-3 h-[200px]">
             <MetricChart
@@ -296,8 +310,12 @@ function App() {
                     </div>
                     <ProgressBar value={disk.percent} variant="default" label="Usage" />
                     <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                      <span>R: {formatBytes(disk.read_bps)}/s</span>
-                      <span>W: {formatBytes(disk.write_bps)}/s</span>
+                      <span title="Read">R: {formatBytes(disk.read_bps)}/s</span>
+                      <span title="Write">W: {formatBytes(disk.write_bps)}/s</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground mt-1 text-[10px]">
+                      <span title="IOPS Read">R-IOPS: {disk.read_iops}</span>
+                      <span title="IOPS Write">W-IOPS: {disk.write_iops}</span>
                     </div>
                   </div>
                 ))}

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useMemo } from "react";
 
 interface CpuHeatmapProps {
     coreCount: number;
@@ -8,10 +9,10 @@ interface CpuHeatmapProps {
 export function CpuHeatmap({ coreCount, overallLoad }: CpuHeatmapProps) {
     // Generate dummy core loads around the overall load for visual variety
     // In a real scenario, this would come from `UpdatePayload.cpu.cores`
-    const cores = Array.from({ length: coreCount }, () => {
+    const cores = useMemo(() => Array.from({ length: coreCount }, () => {
         const variance = (Math.random() - 0.5) * 20; // +/- 10%
         return Math.min(Math.max(overallLoad + variance, 0), 100);
-    });
+    }), [coreCount, overallLoad]);
 
     const getColor = (load: number) => {
         if (load > 80) return "bg-red-500";
