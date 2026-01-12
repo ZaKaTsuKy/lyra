@@ -110,8 +110,8 @@ export const FansWidget: React.FC = React.memo(() => {
             </CardHeader>
             <CardContent>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {fans.map((fan) => (
-                        <FanItem key={`${fan.chip}-${fan.index}`} fan={fan} maxRpm={maxRpm} />
+                    {fans.map((fan, i) => (
+                        <FanItem key={`fan-${i}-${fan.chip}-${fan.index}`} fan={fan} maxRpm={maxRpm} />
                     ))}
                 </div>
             </CardContent>

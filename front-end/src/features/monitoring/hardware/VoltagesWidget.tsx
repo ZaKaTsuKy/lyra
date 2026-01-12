@@ -105,9 +105,9 @@ export const VoltagesWidget: React.FC = React.memo(() => {
                             </tr>
                         </thead>
                         <tbody>
-                            {voltages.map((voltage) => (
+                            {voltages.map((voltage, i) => (
                                 <VoltageRow
-                                    key={`${voltage.chip}-${voltage.index}`}
+                                    key={`voltage-${i}-${voltage.chip}-${voltage.index}`}
                                     voltage={voltage}
                                 />
                             ))}

@@ -109,6 +109,16 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
         description: 'Disk usage, NVMe temps, and IOPS',
         component: lazy(() => import('@/features/monitoring/hardware/StorageHealthWidget').then(m => ({ default: m.StorageHealthWidget }))),
         defaultSize: { w: 1, h: 1 }
+    },
+    // ============================================
+    // PHYSICS ENGINE WIDGET (NEW)
+    // ============================================
+    'physics-diagnostics': {
+        id: 'physics-diagnostics',
+        title: 'Physics Diagnostics',
+        description: 'Thermal efficiency, bottleneck detection, and hardware physics',
+        component: lazy(() => import('@/features/physics/components/PhysicsDiagnosticsWidget').then(m => ({ default: m.PhysicsDiagnosticsWidget }))),
+        defaultSize: { w: 1, h: 2 }
     }
 };
 

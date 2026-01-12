@@ -92,6 +92,7 @@ interface OmniState {
     cleanupFn: (() => void) | null;
     lastUpdateTime: number;
     connectionId: number;
+    heartbeatIntervalId: ReturnType<typeof setInterval> | null;
 
     connect: (url?: string) => void;
     disconnect: () => void;
@@ -102,10 +103,11 @@ interface OmniState {
 }
 
 const DEFAULT_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
-const HISTORY_SIZE = 180; // 3 minutes à 1Hz
+const HISTORY_SIZE = 180; // 3 minutes at 2Hz
 const RECONNECT_INTERVAL = 3000;
 const MAX_RETRIES = 10;
-const UPDATE_THROTTLE_MS = 1000;
+const UPDATE_THROTTLE_MS = 1000; // Must match backend OMNI_REFRESH_INTERVAL (1.0s)
+const HEARTBEAT_INTERVAL_MS = 15000; // Send ping every 15s to detect stale connections
 
 // ============================================
 // Helper: Extraire uniquement les données nécessaires
@@ -142,6 +144,7 @@ export const useTelemetryStore = create<OmniState>()(
         cleanupFn: null,
         lastUpdateTime: 0,
         connectionId: 0,
+        heartbeatIntervalId: null,
 
         // ============================================
         // Getter methods - call these instead of reading history directly
@@ -180,8 +183,15 @@ export const useTelemetryStore = create<OmniState>()(
                     ws.close();
                     return;
                 }
-                set({ status: 'connected', socket: ws, error: null, retryCount: 0 });
-                console.log('Connected to Omni Monitor');
+                // Start heartbeat ping
+                const heartbeatId = setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send('ping');
+                    }
+                }, HEARTBEAT_INTERVAL_MS);
+
+                set({ status: 'connected', socket: ws, error: null, retryCount: 0, heartbeatIntervalId: heartbeatId });
+                if (import.meta.env.DEV) console.log('[WS] Connected to Omni Monitor');
             };
 
             ws.onmessage = (event) => {
@@ -229,7 +239,7 @@ export const useTelemetryStore = create<OmniState>()(
                     return;
                 }
 
-                console.log('Connection lost, reconnecting...');
+                if (import.meta.env.DEV) console.log('[WS] Connection lost, reconnecting...');
                 if (get().retryCount < MAX_RETRIES) {
                     const timeout = setTimeout(() => {
                         if (get().connectionId === currentId) {
@@ -257,8 +267,13 @@ export const useTelemetryStore = create<OmniState>()(
         },
 
         disconnect: () => {
-            const { socket, cleanupFn } = get();
+            const { socket, cleanupFn, heartbeatIntervalId } = get();
             set(s => ({ connectionId: s.connectionId + 1 }));
+
+            // Clear heartbeat
+            if (heartbeatIntervalId) {
+                clearInterval(heartbeatIntervalId);
+            }
 
             if (socket) {
                 socket.onopen = null;
@@ -275,7 +290,8 @@ export const useTelemetryStore = create<OmniState>()(
                 status: 'disconnected',
                 cleanupFn: null,
                 retryCount: 0,
-                liveData: null
+                liveData: null,
+                heartbeatIntervalId: null
             });
         },
     }))
@@ -324,7 +340,7 @@ export const selectors = {
 // ============================================
 import { useMemo } from 'react';
 
-export function useThrottledHistory(throttleMs: number = 5000): HistoryPoint[] {
+export function useThrottledHistory(throttleMs: number = 1000): HistoryPoint[] {
     const version = useTelemetryStore(selectors.historyVersion);
     const getHistory = useTelemetryStore(s => s.getHistory);
 

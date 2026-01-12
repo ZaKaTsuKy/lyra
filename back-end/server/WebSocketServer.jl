@@ -31,6 +31,17 @@ get_allowed_origins() = SERVER_CONFIG.allowed_origins
 const SERVER_RUNNING = Ref{Bool}(true)
 
 # ============================
+# JSON SANITIZATION HELPERS
+# ============================
+
+"""
+Sanitize float values for JSON serialization.
+Inf, -Inf, and NaN are not valid in JSON spec, so we convert them to safe values.
+"""
+sanitize_float(x::Float64)::Float64 = isfinite(x) ? x : (isnan(x) ? 0.0 : (x > 0 ? 1e308 : -1e308))
+sanitize_float(x::Number)::Float64 = sanitize_float(Float64(x))
+
+# ============================
 # DTO STRUCTURES (Immutable JSON Payloads)
 # ============================
 
@@ -339,6 +350,35 @@ end
 StructTypes.StructType(::Type{FullSensorsDTO}) = StructTypes.Struct()
 StructTypes.StructType(::Type{Union{Nothing,GPUSensorsDTO}}) = StructTypes.Struct()
 
+# ============================
+# PHYSICS DIAGNOSTICS DTO (NEW)
+# ============================
+
+"""Physics-aware diagnostic engine results for frontend"""
+struct PhysicsDiagnosticsDTO
+    thermal_efficiency_pct::Float64      # 100 - efficiency_drop_pct
+    thermal_degradation::Bool
+    rth_baseline::Float64                # Baseline thermal resistance
+    rth_instant::Float64                 # Current thermal resistance
+    fan_hunting::Bool
+    rpm_variance::Float64
+    temp_derivative::Float64             # dT/dt (°C/s)
+    vcore_unstable::Bool
+    rail_12v_unstable::Bool
+    vcore_variance_mv::Float64           # Vcore variance in mV
+    time_to_throttle_sec::Float64
+    throttle_imminent::Bool
+    is_transient_spike::Bool
+    workload_state::String
+    temp_warning::Float64                # Dynamic threshold
+    temp_critical::Float64               # Dynamic threshold
+    bottleneck::String
+    bottleneck_severity::Float64
+    diagnostics::Vector{String}          # Human-readable messages
+end
+
+StructTypes.StructType(::Type{PhysicsDiagnosticsDTO}) = StructTypes.Struct()
+
 """UPDATE_PAYLOAD: Sent every loop iteration (fully immutable)"""
 struct UpdatePayload
     type::String
@@ -353,7 +393,8 @@ struct UpdatePayload
     top_processes::Vector{ProcessInstant}
     hardware_health::Union{Nothing,HardwareHealthDTO}
     cognitive::Union{Nothing,CognitiveInsightsDTO}
-    full_sensors::Union{Nothing,FullSensorsDTO}  # NEW
+    full_sensors::Union{Nothing,FullSensorsDTO}
+    physics_diagnostics::Union{Nothing,PhysicsDiagnosticsDTO}  # NEW
     update_count::Int
     timestamp::Float64
 end
@@ -363,6 +404,7 @@ StructTypes.StructType(::Type{Union{Nothing,GPUInstant}}) = StructTypes.Struct()
 StructTypes.StructType(::Type{Union{Nothing,HardwareHealthDTO}}) = StructTypes.Struct()
 StructTypes.StructType(::Type{Union{Nothing,CognitiveInsightsDTO}}) = StructTypes.Struct()
 StructTypes.StructType(::Type{Union{Nothing,FullSensorsDTO}}) = StructTypes.Struct()
+StructTypes.StructType(::Type{Union{Nothing,PhysicsDiagnosticsDTO}}) = StructTypes.Struct()
 
 # ============================
 # CLIENT MANAGEMENT (Thread-Safe)
@@ -652,8 +694,8 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         String(a.net_trend),
         # Regime from AI state
         String(get_current_regime()),
-        # Predictions
-        [PredictionDTO(String(p.metric), Float64(p.time_to_critical_sec), Float64(p.confidence))
+        # Predictions (sanitize Inf values for JSON)
+        [PredictionDTO(String(p.metric), sanitize_float(p.time_to_critical_sec), Float64(p.confidence))
          for p in a.predictions],
         # Coherence alerts
         Bool(ai_state.coherence.temp_without_load),
@@ -794,6 +836,42 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         nothing
     end
 
+    # Physics Diagnostics (NEW)
+    physics_diagnostics = try
+        pe = get_ai_state().physics_engine
+        te = pe.thermal_efficiency
+        fs_mod = pe.fan_stability
+        pq = pe.power_quality
+        ts = pe.thermal_saturation
+        wc = pe.workload_classifier
+        bd = pe.bottleneck_detector
+
+        PhysicsDiagnosticsDTO(
+            Float64(100.0 - te.efficiency_drop_pct),
+            Bool(te.degradation_alert),
+            Float64(te.rth_baseline),
+            Float64(te.rth_instant),
+            Bool(fs_mod.pumping_detected),
+            Float64(fs_mod.rpm_variance),
+            Float64(fs_mod.temp_derivative),
+            Bool(pq.vdroop_abnormal),
+            Bool(pq.rail_12v_unstable),
+            Float64(sqrt(pq.vcore_variance) * 1000),  # Convert to mV
+            sanitize_float(ts.time_to_critical_sec),  # Can be Inf
+            Bool(ts.throttle_imminent),
+            Bool(ts.is_transient_spike),
+            String(workload_name(wc.current_state)),
+            Float64(wc.temp_warning),
+            Float64(wc.temp_critical),
+            String(bottleneck_name(bd.bottleneck)),
+            Float64(bd.bottleneck_severity),
+            copy(pe.diagnostics)
+        )
+    catch e
+        @debug "Error building PhysicsDiagnosticsDTO" exception = e
+        nothing
+    end
+
     return UpdatePayload(
         "update",
         cpu,
@@ -808,6 +886,7 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         hardware_health,
         cognitive,
         full_sensors,
+        physics_diagnostics,
         Int(monitor.update_count),
         Float64(time())
     )

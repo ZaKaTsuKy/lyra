@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect, useState } from 'react';
+import React, { useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { Group, Mesh, Color, MeshStandardMaterial, MeshBasicMaterial, BoxGeometry, CylinderGeometry } from 'three';
@@ -77,6 +77,13 @@ export const TowerModel: React.FC = () => {
 
     // Hover state for tooltips
     const [hoveredComponent, setHoveredComponent] = useState<string | null>(null);
+
+    // Memoized hover handlers to prevent closure issues
+    const handleHoverCpu = useCallback(() => setHoveredComponent('cpu'), []);
+    const handleHoverGpu = useCallback(() => setHoveredComponent('gpu'), []);
+    const handleHoverCaseFan = useCallback(() => setHoveredComponent('case_fan'), []);
+    const handleHoverRearFan = useCallback(() => setHoveredComponent('rear_fan'), []);
+    const handleHoverLeave = useCallback(() => setHoveredComponent(null), []);
 
     // Reusable Color instances
     const targetColorCpu = useRef(new Color());
@@ -174,45 +181,59 @@ export const TowerModel: React.FC = () => {
         };
     }, [materials, geometries]);
 
+    // Reference to the whole group for auto-rotation
+    const groupRef = useRef<Group>(null);
+
+    // Cached values to avoid repeated Map lookups
+    const cachedFanRpms = useRef({ cpu: 800, case: 600, rear: 700 });
+
     // ============================================
-    // ANIMATION LOOP - Enhanced with multi-fan
+    // ANIMATION LOOP - Optimized with manual rotation
     // ============================================
     useFrame((_, delta) => {
         const { cpuTemp, gpuTemp, fans } = animationDataRef.current;
 
+        // Manual auto-rotation (replaces OrbitControls autoRotate)
+        if (groupRef.current) {
+            groupRef.current.rotation.y += 0.002; // ~0.1 rad/s
+        }
+
         // CPU Temperature -> Color (Green 30°C -> Red 90°C)
-        const normalizedCpuTemp = Math.min(Math.max((cpuTemp - 30) / 60, 0), 1);
+        // Only update if refs exist
         if (cpuBlockRef.current) {
+            const normalizedCpuTemp = Math.min(Math.max((cpuTemp - 30) / 60, 0), 1);
             targetColorCpu.current.setHSL(0.33 * (1 - normalizedCpuTemp), 1, 0.5);
             materials.cpuBlock.color.lerp(targetColorCpu.current, 0.1);
         }
 
         // GPU Temperature -> Color
-        const normalizedGpuTemp = Math.min(Math.max((gpuTemp - 30) / 70, 0), 1);
         if (gpuBlockRef.current) {
+            const normalizedGpuTemp = Math.min(Math.max((gpuTemp - 30) / 70, 0), 1);
             targetColorGpu.current.setHSL(0.55 * (1 - normalizedGpuTemp), 0.8, 0.35);
             materials.gpu.color.lerp(targetColorGpu.current, 0.1);
         }
 
-        // CPU Fan rotation
-        const cpuRpm = fans.get('cpu_fan') || 800;
-        const cpuRotation = (cpuRpm / 60) * 2 * Math.PI * delta;
+        // Cache fan RPMs to avoid Map.get on every frame
+        // Only update cache every ~10 frames
+        if (Math.random() < 0.1) {
+            cachedFanRpms.current.cpu = fans.get('cpu_fan') || 800;
+            cachedFanRpms.current.case = fans.get('case_fan') || 600;
+            cachedFanRpms.current.rear = fans.get('rear_fan') || 700;
+        }
+
+        // Fan rotations using cached values
+        const twoPiDelta = 2 * Math.PI * delta;
+
         if (cpuFanRef.current) {
-            cpuFanRef.current.rotation.y -= cpuRotation;
+            cpuFanRef.current.rotation.y -= (cachedFanRpms.current.cpu / 60) * twoPiDelta;
         }
 
-        // Case Fan rotation
-        const caseRpm = fans.get('case_fan') || 600;
-        const caseRotation = (caseRpm / 60) * 2 * Math.PI * delta;
         if (caseFanRef.current) {
-            caseFanRef.current.rotation.x -= caseRotation;
+            caseFanRef.current.rotation.x -= (cachedFanRpms.current.case / 60) * twoPiDelta;
         }
 
-        // Rear Fan rotation
-        const rearRpm = fans.get('rear_fan') || 700;
-        const rearRotation = (rearRpm / 60) * 2 * Math.PI * delta;
         if (rearFanRef.current) {
-            rearFanRef.current.rotation.x += rearRotation;
+            rearFanRef.current.rotation.x += (cachedFanRpms.current.rear / 60) * twoPiDelta;
         }
     });
 
@@ -220,7 +241,7 @@ export const TowerModel: React.FC = () => {
     const data = animationDataRef.current;
 
     return (
-        <group dispose={null}>
+        <group ref={groupRef} dispose={null}>
             {/* --- CASE --- */}
             <mesh position={[0, 2.5, 0]} geometry={geometries.case} material={materials.caseWireframe} />
 
@@ -233,8 +254,8 @@ export const TowerModel: React.FC = () => {
                     ref={cpuBlockRef}
                     geometry={geometries.cpuBlock}
                     material={materials.cpuBlock}
-                    onPointerEnter={() => setHoveredComponent('cpu')}
-                    onPointerLeave={() => setHoveredComponent(null)}
+                    onPointerEnter={handleHoverCpu}
+                    onPointerLeave={handleHoverLeave}
                 />
                 <Tooltip3D
                     visible={hoveredComponent === 'cpu'}
@@ -256,8 +277,8 @@ export const TowerModel: React.FC = () => {
                     ref={gpuBlockRef}
                     geometry={geometries.gpu}
                     material={materials.gpu}
-                    onPointerEnter={() => setHoveredComponent('gpu')}
-                    onPointerLeave={() => setHoveredComponent(null)}
+                    onPointerEnter={handleHoverGpu}
+                    onPointerLeave={handleHoverLeave}
                 />
                 <Tooltip3D
                     visible={hoveredComponent === 'gpu'}
@@ -276,8 +297,8 @@ export const TowerModel: React.FC = () => {
                         rotation={[Math.PI / 2, 0, 0]}
                         geometry={geometries.caseFanHub}
                         material={materials.caseFanHub}
-                        onPointerEnter={() => setHoveredComponent('case_fan')}
-                        onPointerLeave={() => setHoveredComponent(null)}
+                        onPointerEnter={handleHoverCaseFan}
+                        onPointerLeave={handleHoverLeave}
                     />
                     <mesh rotation={[0, 0, 0]} geometry={geometries.caseFanBlade} material={materials.caseFanBlade} />
                     <mesh rotation={[0, Math.PI / 2, 0]} geometry={geometries.caseFanBlade} material={materials.caseFanBlade} />
@@ -298,8 +319,8 @@ export const TowerModel: React.FC = () => {
                         rotation={[Math.PI / 2, 0, 0]}
                         geometry={geometries.rearFanHub}
                         material={materials.rearFanHub}
-                        onPointerEnter={() => setHoveredComponent('rear_fan')}
-                        onPointerLeave={() => setHoveredComponent(null)}
+                        onPointerEnter={handleHoverRearFan}
+                        onPointerLeave={handleHoverLeave}
                     />
                     <mesh rotation={[0, 0, 0]} geometry={geometries.rearFanBlade} material={materials.rearFanBlade} />
                     <mesh rotation={[0, Math.PI / 2, 0]} geometry={geometries.rearFanBlade} material={materials.rearFanBlade} />

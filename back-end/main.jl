@@ -40,6 +40,7 @@ include("OS/Linux/ai/Spectral.jl")
 include("OS/Linux/ai/Behavioral.jl")
 include("OS/Linux/ai/Physical.jl")
 include("OS/Linux/ai/Simulation.jl")
+include("OS/Linux/ai/PhysicsEngine.jl")
 include("OS/Linux/AI.jl")
 
 # UI

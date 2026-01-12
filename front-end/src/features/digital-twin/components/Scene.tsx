@@ -1,95 +1,99 @@
-import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Environment, ContactShadows } from '@react-three/drei';
 import { TowerModel } from './TowerModel';
 
 // ============================
-// FRAME LOOP CONTROLLER
-// Invalidates the frame on telemetry update (1Hz) instead of 60fps
+// UNIFIED FRAME CONTROLLER
+// Uses interval-based invalidation (more reliable than frame counting)
 // ============================
-function FrameLoopController() {
-    const { invalidate } = useThree();
-    const animationRef = useRef<number | null>(null);
-    const lastFrameTime = useRef(0);
-    const TARGET_FPS = 30; // 30fps is plenty for a monitoring dashboard
-    const FRAME_INTERVAL = 1000 / TARGET_FPS;
+function UnifiedFrameController() {
+    const { invalidate, gl } = useThree();
+    const isVisible = useRef(true);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+    // Visibility handling
     useEffect(() => {
-        let isVisible = true;
-
-        const handleVisibilityChange = () => {
-            isVisible = document.visibilityState === 'visible';
-            if (isVisible) {
-                // Resume animation loop when tab becomes visible
-                startLoop();
-            } else {
-                // Stop animation loop when tab is hidden
-                if (animationRef.current) {
-                    cancelAnimationFrame(animationRef.current);
-                    animationRef.current = null;
-                }
+        const handleVisibility = () => {
+            isVisible.current = document.visibilityState === 'visible';
+            if (isVisible.current) {
+                invalidate();
             }
         };
 
-        const loop = (currentTime: number) => {
-            if (!isVisible) return;
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => document.removeEventListener('visibilitychange', handleVisibility);
+    }, [invalidate]);
 
-            const elapsed = currentTime - lastFrameTime.current;
-            if (elapsed >= FRAME_INTERVAL) {
-                lastFrameTime.current = currentTime - (elapsed % FRAME_INTERVAL);
-                invalidate(); // Trigger a single frame render
+    // Fixed interval invalidation (~20fps = 50ms)
+    // This is more predictable than frame counting
+    useEffect(() => {
+        intervalRef.current = setInterval(() => {
+            if (isVisible.current) {
+                invalidate();
             }
-
-            animationRef.current = requestAnimationFrame(loop);
-        };
-
-        const startLoop = () => {
-            if (!animationRef.current) {
-                animationRef.current = requestAnimationFrame(loop);
-            }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        startLoop();
+        }, 50); // 20fps refresh rate
 
         return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            if (animationRef.current) {
-                cancelAnimationFrame(animationRef.current);
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
             }
         };
     }, [invalidate]);
 
+    // Cleanup WebGL context on unmount
+    useEffect(() => {
+        return () => {
+            gl.dispose();
+        };
+    }, [gl]);
+
     return null;
 }
 
-export const Scene: React.FC = () => {
+// ============================
+// SCENE COMPONENT - Optimized
+// ============================
+export const Scene: React.FC = React.memo(() => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
     return (
         <div className="w-full h-full min-h-[300px] bg-slate-950 rounded-lg overflow-hidden relative">
             <Canvas
+                ref={canvasRef}
                 shadows
-                dpr={[1, 1.5]} // Reduce max DPR for performance
-                frameloop="demand" // Only render when invalidate() is called
+                dpr={[1, 1.5]}
+                frameloop="demand"
                 gl={{
-                    powerPreference: 'low-power', // Prefer integrated GPU
+                    powerPreference: 'low-power',
                     antialias: true,
+                    // Reduce memory usage
+                    preserveDrawingBuffer: false,
+                    // Disable unnecessary features
+                    alpha: false,
+                    stencil: false,
+                    depth: true,
                 }}
-                onCreated={({ gl }) => {
-                    return () => {
-                        gl.dispose();
-                    };
+                // Performance optimizations
+                performance={{
+                    min: 0.5,  // Allow frame rate to drop to 50%
+                    max: 1,
+                    debounce: 200,
                 }}
             >
-                <FrameLoopController />
+                <UnifiedFrameController />
 
                 <PerspectiveCamera makeDefault position={[5, 4, 6]} fov={50} />
+
+                {/* OrbitControls WITHOUT autoRotate - rotation handled manually */}
                 <OrbitControls
                     makeDefault
                     minPolarAngle={0}
                     maxPolarAngle={Math.PI / 1.5}
                     enablePan={false}
-                    autoRotate={true}
-                    autoRotateSpeed={0.3} // Slower rotation
+                    autoRotate={false}  // DISABLED - prevents continuous invalidation
+                    enableDamping={true}
+                    dampingFactor={0.05}
                 />
 
                 <ambientLight intensity={0.5} />
@@ -99,7 +103,7 @@ export const Scene: React.FC = () => {
                     penumbra={1}
                     intensity={1}
                     castShadow
-                    shadow-mapSize={[512, 512]} // Reduce shadow map size
+                    shadow-mapSize={[512, 512]}
                 />
                 <pointLight position={[-10, -10, -10]} intensity={0.5} color="#4ade80" />
 
@@ -117,10 +121,11 @@ export const Scene: React.FC = () => {
                 />
             </Canvas>
 
-            {/* Overlay UI if needed */}
             <div className="absolute bottom-2 left-2 pointer-events-none">
                 <span className="text-xs text-slate-500 font-mono">DIGITAL TWIN // LIVE</span>
             </div>
         </div>
     );
-};
+});
+
+Scene.displayName = 'Scene';

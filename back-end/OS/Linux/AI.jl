@@ -562,6 +562,8 @@ mutable struct AIState
     prev_fan_rpm::Int
     behavioral_anomaly::Bool
     behavioral_anomaly_desc::String
+    # Physics-Aware Diagnostic Engine
+    physics_engine::PhysicsEngine
 end
 
 function AIState()
@@ -575,7 +577,8 @@ function AIState()
         FFTAnalyzer(64, 1.0),   # Fan FFT
         false, false,
         MarkovChain(100),
-        0, false, "")
+        0, false, "",
+        PhysicsEngine())
 end
 
 const AI_STATE = Ref{AIState}()
@@ -825,6 +828,17 @@ function update_anomaly!(monitor::SystemMonitor)
         end
     else
         ai.behavioral_anomaly_desc = ""
+    end
+
+    # Physics-Aware Diagnostic Engine update
+    if monitor.full_sensors !== nothing
+        update_physics_engine!(
+            ai.physics_engine,
+            monitor.full_sensors,
+            monitor,
+            get_cpu_usage(monitor),
+            get_cpu_temp(monitor)
+        )
     end
 
     w = (cpu=0.20, mem=0.20, io=0.15, net=0.10, gpu=0.15, temp=0.20)

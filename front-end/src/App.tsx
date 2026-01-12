@@ -44,7 +44,7 @@ function useAutoRefresh() {
       const isIdle = Date.now() - lastActivityRef.current > IDLE_THRESHOLD_MS;
 
       if (isRefreshHour && isIdle) {
-        console.log('[AutoRefresh] Performing daily maintenance reload at', now.toISOString());
+        if (import.meta.env.DEV) console.log('[AutoRefresh] Performing daily maintenance reload at', now.toISOString());
         window.location.reload();
       }
     }, 60_000); // Check every minute

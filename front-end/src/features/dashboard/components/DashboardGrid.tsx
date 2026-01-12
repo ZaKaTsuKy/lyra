@@ -33,6 +33,9 @@ export function DashboardGrid() {
     // Memoize widget IDs to prevent array recreation on every render
     const widgetIds = useMemo(() => widgets.map(w => w.id), [widgets]);
 
+    // Memoize filtered visible widgets to prevent filter on every render
+    const visibleWidgets = useMemo(() => widgets.filter(w => w.isVisible), [widgets]);
+
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
 
@@ -52,7 +55,7 @@ export function DashboardGrid() {
                 strategy={rectSortingStrategy}
             >
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 auto-rows-[minmax(200px,auto)]">
-                    {widgets.filter(w => w.isVisible).map((widget) => {
+                    {visibleWidgets.map((widget) => {
                         const def = getWidgetDefinition(widget.type);
 
                         if (!def) return null;

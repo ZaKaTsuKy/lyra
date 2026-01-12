@@ -31,16 +31,18 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
     { id: 'fans', type: 'fans', position: 5, isVisible: true },
     { id: 'voltages', type: 'voltages', position: 6, isVisible: true },
     { id: 'storage-health', type: 'storage-health', position: 7, isVisible: true },
+    // Physics Engine widget (NEW)
+    { id: 'physics-diagnostics', type: 'physics-diagnostics', position: 8, isVisible: true },
     // Legacy hardware widgets (can be hidden in favor of new ones)
-    { id: 'hardware-health', type: 'hardware-health', position: 8, isVisible: true },
-    { id: 'sensors', type: 'sensors', position: 9, isVisible: false },  // Hidden - replaced by fans/voltages
-    { id: 'cognitive', type: 'cognitive', position: 10, isVisible: true },
-    { id: 'history', type: 'history', position: 11, isVisible: true },
-    { id: 'digital-twin', type: 'digital-twin', position: 12, isVisible: true },
+    { id: 'hardware-health', type: 'hardware-health', position: 9, isVisible: true },
+    { id: 'sensors', type: 'sensors', position: 10, isVisible: false },  // Hidden - replaced by fans/voltages
+    { id: 'cognitive', type: 'cognitive', position: 11, isVisible: true },
+    { id: 'history', type: 'history', position: 12, isVisible: true },
+    { id: 'digital-twin', type: 'digital-twin', position: 13, isVisible: true },
 ];
 
 // Version pour forcer la mise à jour du localStorage si les widgets par défaut changent
-const WIDGET_LAYOUT_VERSION = 2;
+const WIDGET_LAYOUT_VERSION = 3;
 
 export const usePreferencesStore = create<PreferencesState>()(
     persist(
@@ -78,7 +80,7 @@ export const usePreferencesStore = create<PreferencesState>()(
 
                 // If layout version is outdated or missing, reset to defaults
                 if (!state.layoutVersion || state.layoutVersion < WIDGET_LAYOUT_VERSION) {
-                    console.log('[Preferences] Migrating widget layout to version', WIDGET_LAYOUT_VERSION);
+                    if (import.meta.env.DEV) console.log('[Preferences] Migrating widget layout to version', WIDGET_LAYOUT_VERSION);
                     return {
                         ...state,
                         widgets: DEFAULT_WIDGETS,

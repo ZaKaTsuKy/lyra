@@ -155,9 +155,9 @@ export const SensorsOverviewWidget: React.FC = React.memo(() => {
                     )}
 
                     {/* NVMe */}
-                    {nvmeList.map((nvme) => (
+                    {nvmeList.map((nvme, i) => (
                         <ThermalBlock
-                            key={nvme.name}
+                            key={`nvme-${i}-${nvme.name}`}
                             label={nvme.name.toUpperCase()}
                             temp={nvme.temp_composite}
                             critical={70}
@@ -165,9 +165,9 @@ export const SensorsOverviewWidget: React.FC = React.memo(() => {
                     ))}
 
                     {/* Generic temps (first 4) */}
-                    {genericTemps.slice(0, 4).map((temp) => (
+                    {genericTemps.slice(0, 4).map((temp, i) => (
                         <ThermalBlock
-                            key={`${temp.chip}-${temp.index}`}
+                            key={`generic-${i}-${temp.chip}-${temp.index}`}
                             label={temp.label}
                             temp={temp.value}
                             critical={85}

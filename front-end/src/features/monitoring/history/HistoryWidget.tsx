@@ -13,7 +13,7 @@ import { useTelemetryStore, selectors, type HistoryPoint } from "@/store/telemet
  * 3. Caches the history array to avoid unnecessary transformations
  */
 
-const HISTORY_THROTTLE_MS = 5000; // Only update charts every 5 seconds
+const HISTORY_THROTTLE_MS = 1000; // Matches main UPDATE_THROTTLE_MS
 
 export const HistoryWidget = memo(function HistoryWidget() {
     // Track version changes

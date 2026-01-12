@@ -1,7 +1,7 @@
 import { ResponsiveContainer, AreaChart, Area, XAxis, Tooltip, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import type { HistoryPoint } from '@/store/telemetryStore';
-import { memo, useId, useMemo, useRef } from 'react';
+import { memo, useId, useMemo, useRef, useCallback } from 'react';
 
 interface MetricChartProps {
     title: string;
@@ -51,6 +51,27 @@ const TOOLTIP_STYLE = {
     borderColor: "hsl(var(--border))",
     borderRadius: "8px"
 };
+
+// ============================================
+// Time formatting for X axis
+// Shows elapsed time from start of data range
+// Left side shows "-Xs" (oldest), right side shows "0" (newest)
+// ============================================
+function formatElapsedTime(timestamp: number, firstTimestamp: number, lastTimestamp: number): string {
+    const total = lastTimestamp - firstTimestamp;
+
+    if (total === 0) return '0';
+
+    // Show how many seconds ago from the newest point
+    const secsFromEnd = Math.round(lastTimestamp - timestamp);
+
+    if (secsFromEnd <= 0) return '0';
+    if (secsFromEnd < 60) return `-${secsFromEnd}s`;
+    const mins = Math.floor(secsFromEnd / 60);
+    const secs = secsFromEnd % 60;
+    if (secs === 0) return `-${mins}m`;
+    return `-${mins}m${secs}s`;
+}
 
 export const MetricChart = memo(function MetricChart({
     title,
@@ -104,16 +125,41 @@ export const MetricChart = memo(function MetricChart({
         return result;
     }, [data, dataKey, limit]);
 
-    // Memoize label formatter to avoid recreation
-    const labelFormatter = useMemo(() => () => '', []);
+    // Get first and last timestamps for relative time formatting
+    const timeRange = useMemo(() => {
+        if (chartData.length === 0) return { first: 0, last: 0 };
+        return {
+            first: chartData[0].timestamp,
+            last: chartData[chartData.length - 1].timestamp
+        };
+    }, [chartData]);
 
-    // Memoize tooltip formatter
+    // X-axis tick formatter - shows elapsed time from newest point
+    const xAxisFormatter = useCallback(
+        (ts: number) => formatElapsedTime(ts, timeRange.first, timeRange.last),
+        [timeRange]
+    );
+
+    // Y-axis tick formatter (use provided formatter with compact output)
+    const yAxisFormatter = useCallback((val: number) => {
+        const formatted = formatter(val);
+        // Keep it short for axis labels
+        return formatted.length > 6 ? formatted.slice(0, 5) + '…' : formatted;
+    }, [formatter]);
+
+    // Tooltip formatter
     const tooltipFormatter = useMemo(() => {
         return (val: number | string | Array<number | string> | undefined) => [
             `${formatter(Number(val ?? 0))}${unit}`,
             title
         ];
     }, [formatter, unit, title]);
+
+    // Tooltip label formatter (shows actual time)
+    const tooltipLabelFormatter = useCallback((ts: number) => {
+        const date = new Date(ts);
+        return date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }, []);
 
     // Loading state
     if (chartData.length === 0) {
@@ -134,24 +180,41 @@ export const MetricChart = memo(function MetricChart({
     return (
         <Card className="h-full">
             <CardHeader className="p-4 pb-0">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {title}
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
+                    <span>{title}</span>
+                    {unit && <span className="text-xs font-normal opacity-60">({unit})</span>}
                 </CardTitle>
             </CardHeader>
-            <CardContent className="p-0 h-[150px]">
+            <CardContent className="p-0 h-[170px]">
                 <ResponsiveContainer width="100%" height="100%" minHeight={100}>
-                    <AreaChart data={chartData}>
+                    <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                         <defs>
                             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor={color} stopOpacity={0.3} />
                                 <stop offset="95%" stopColor={color} stopOpacity={0} />
                             </linearGradient>
                         </defs>
-                        <XAxis dataKey="timestamp" hide />
-                        <YAxis hide domain={range} />
+                        <XAxis
+                            dataKey="timestamp"
+                            tickFormatter={xAxisFormatter}
+                            tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                            axisLine={{ stroke: 'hsl(var(--border))' }}
+                            tickLine={{ stroke: 'hsl(var(--border))' }}
+                            interval="preserveStartEnd"
+                            minTickGap={30}
+                        />
+                        <YAxis
+                            domain={range}
+                            tickFormatter={yAxisFormatter}
+                            tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                            axisLine={{ stroke: 'hsl(var(--border))' }}
+                            tickLine={{ stroke: 'hsl(var(--border))' }}
+                            width={35}
+                            tickCount={4}
+                        />
                         <Tooltip
                             contentStyle={TOOLTIP_STYLE}
-                            labelFormatter={labelFormatter}
+                            labelFormatter={tooltipLabelFormatter}
                             formatter={tooltipFormatter}
                         />
                         <Area

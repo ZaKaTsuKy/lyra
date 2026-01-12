@@ -74,3 +74,142 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Physics Diagnostics Widget */
+.physics-widget {
+  @apply rounded-lg border bg-card text-card-foreground shadow-sm;
+  padding: 1rem;
+}
+
+.physics-widget--loading {
+  opacity: 0.7;
+}
+
+.physics-widget__header {
+  @apply flex items-center gap-2 text-sm font-medium mb-3;
+}
+
+.physics-widget__header > svg {
+  @apply text-primary;
+}
+
+.physics-widget__workload {
+  @apply ml-auto px-2 py-0.5 rounded text-xs font-bold uppercase;
+}
+
+.physics-widget__workload--idle {
+  @apply bg-gray-500/20 text-gray-400;
+}
+
+.physics-widget__workload--compute {
+  @apply bg-blue-500/20 text-blue-400;
+}
+
+.physics-widget__workload--gaming {
+  @apply bg-purple-500/20 text-purple-400;
+}
+
+.physics-widget__workload--mixed {
+  @apply bg-orange-500/20 text-orange-400;
+}
+
+.physics-widget__workload--io_intensive {
+  @apply bg-cyan-500/20 text-cyan-400;
+}
+
+.physics-widget__content {
+  @apply space-y-3;
+}
+
+.physics-widget__section {
+  @apply space-y-1;
+}
+
+.physics-widget__label {
+  @apply flex items-center gap-1.5 text-xs text-muted-foreground;
+}
+
+.physics-widget__empty {
+  @apply text-sm text-muted-foreground italic;
+}
+
+.physics-widget__gauge {
+  @apply relative h-6 rounded-full overflow-hidden;
+  background: hsl(var(--muted));
+}
+
+.physics-widget__gauge-fill {
+  @apply h-full transition-all duration-300;
+}
+
+.physics-widget__gauge--good .physics-widget__gauge-fill {
+  @apply bg-emerald-500;
+}
+
+.physics-widget__gauge--warn .physics-widget__gauge-fill {
+  @apply bg-amber-500;
+}
+
+.physics-widget__gauge--critical .physics-widget__gauge-fill {
+  @apply bg-red-500;
+}
+
+.physics-widget__gauge-text {
+  @apply absolute inset-0 flex items-center justify-center text-xs font-bold text-white mix-blend-difference;
+}
+
+.physics-widget__alert {
+  @apply flex items-center gap-1 px-2 py-1 rounded text-xs;
+}
+
+.physics-widget__alert--warn {
+  @apply bg-amber-500/20 text-amber-400;
+}
+
+.physics-widget__alert--critical {
+  @apply bg-red-500/20 text-red-400;
+}
+
+.physics-widget__ttc {
+  @apply text-2xl font-bold tracking-tight;
+}
+
+.physics-widget__ttc--imminent {
+  @apply text-red-500 animate-pulse;
+}
+
+.physics-widget__transient {
+  @apply ml-2 text-xs text-muted-foreground font-normal;
+}
+
+.physics-widget__thresholds {
+  @apply flex gap-4 text-xs text-muted-foreground;
+}
+
+.physics-widget__bottleneck {
+  @apply text-sm font-medium;
+}
+
+.physics-widget__bottleneck--low {
+  @apply text-amber-400;
+}
+
+.physics-widget__bottleneck--high {
+  @apply text-red-400;
+}
+
+.physics-widget__severity {
+  @apply ml-1 text-xs text-muted-foreground;
+}
+
+.physics-widget__diagnostics {
+  @apply mt-2 pt-2 border-t border-border;
+}
+
+.physics-widget__log {
+  @apply text-xs space-y-0.5 max-h-24 overflow-y-auto;
+}
+
+.physics-widget__log li {
+  @apply truncate;
+}

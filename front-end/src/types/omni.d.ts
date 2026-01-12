@@ -231,6 +231,29 @@ export interface FullSensorsDTO {
     chip_names: string[];
 }
 
+// Physics-Aware Diagnostic Engine DTO (NEW)
+export interface PhysicsDiagnosticsDTO {
+    thermal_efficiency_pct: number;      // 100 - efficiency_drop_pct
+    thermal_degradation: boolean;
+    rth_baseline: number;                // Baseline thermal resistance
+    rth_instant: number;                 // Current thermal resistance
+    fan_hunting: boolean;
+    rpm_variance: number;
+    temp_derivative: number;             // dT/dt (°C/s)
+    vcore_unstable: boolean;
+    rail_12v_unstable: boolean;
+    vcore_variance_mv: number;           // Vcore variance in mV
+    time_to_throttle_sec: number;
+    throttle_imminent: boolean;
+    is_transient_spike: boolean;
+    workload_state: string;
+    temp_warning: number;                // Dynamic threshold
+    temp_critical: number;               // Dynamic threshold
+    bottleneck: string;
+    bottleneck_severity: number;
+    diagnostics: string[];               // Human-readable messages
+}
+
 export interface UpdatePayload {
     type: "update";
     cpu: CPUInstant;
@@ -244,7 +267,8 @@ export interface UpdatePayload {
     top_processes: ProcessInstant[];
     hardware_health: HardwareHealthDTO | null;
     cognitive: CognitiveInsightsDTO | null;
-    full_sensors: FullSensorsDTO | null;  // NEW
+    full_sensors: FullSensorsDTO | null;
+    physics_diagnostics: PhysicsDiagnosticsDTO | null;  // NEW
     update_count: number;
     timestamp: number;
 }
