@@ -58,7 +58,7 @@ end
 # ============================
 
 const APP_CONFIG = (
-    refresh_interval=env_get("OMNI_REFRESH_INTERVAL", 0.5),
+    refresh_interval=env_get("OMNI_REFRESH_INTERVAL", 1.0),
     enable_gpu=env_get("OMNI_ENABLE_GPU", true),
     enable_battery=env_get("OMNI_ENABLE_BATTERY", true),
     enable_processes=env_get("OMNI_ENABLE_PROCESSES", true),
@@ -86,6 +86,8 @@ const SERVER_CONFIG = (
     rate_limit_max_messages=env_get("OMNI_RATE_LIMIT_MAX_MESSAGES", 10),
 
     # CORS
+    # ⚠️ SECURITY: Change from ["*"] to specific origins in production!
+    # Example: ["http://localhost:3000", "https://yourdomain.com"]
     allowed_origins=env_get("OMNI_CORS_ORIGINS", ["*"]),
 )
 
@@ -145,6 +147,33 @@ const COLLECTOR_CONFIG = (
 )
 
 # ============================
+# PHYSICS ENGINE CONFIG
+# ============================
+
+const PHYSICS_CONFIG = (
+    # ThermalEfficiency
+    thermal_efficiency_alert_pct=env_get("OMNI_THERMAL_EFF_ALERT_PCT", 15.0),
+    min_cpu_load_for_rth=env_get("OMNI_MIN_CPU_LOAD_RTH", 20.0),
+
+    # FanStability
+    temp_derivative_stable_threshold=env_get("OMNI_TEMP_DERIV_STABLE", 0.1),
+    rpm_variance_hunting_threshold=env_get("OMNI_RPM_VAR_HUNTING", 10000.0),
+
+    # PowerQuality
+    rail_12v_variance_alert_pct=env_get("OMNI_12V_VAR_ALERT_PCT", 5.0),
+    vcore_variance_alert_mv=env_get("OMNI_VCORE_VAR_ALERT_MV", 50.0),
+
+    # ThermalSaturation
+    t_critical=env_get("OMNI_T_CRITICAL", 95.0),
+    throttle_warning_sec=env_get("OMNI_THROTTLE_WARN_SEC", 30.0),
+    temp_ewma_alpha=env_get("OMNI_TEMP_EWMA_ALPHA", 0.15),
+
+    # Bottleneck
+    bottleneck_high_threshold=env_get("OMNI_BOTTLENECK_HIGH", 90.0),
+    bottleneck_low_threshold=env_get("OMNI_BOTTLENECK_LOW", 50.0),
+)
+
+# ============================
 # EXPORTS & UTILITIES
 # ============================
 
@@ -165,6 +194,10 @@ function print_config()
     end
     println("\n[COLLECTOR_CONFIG]")
     for (k, v) in pairs(COLLECTOR_CONFIG)
+        println("  $k = $v")
+    end
+    println("\n[PHYSICS_CONFIG]")
+    for (k, v) in pairs(PHYSICS_CONFIG)
         println("  $k = $v")
     end
     println("===================================")

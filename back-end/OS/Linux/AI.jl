@@ -546,13 +546,39 @@ mutable struct AIState
     recommended_sample_interval::Float64
     sample_count::Int
     last_update::Float64
+    # Isolation Forest for multi-dimensional anomaly detection
+    iforest::IsolationForest
+    iforest_score::Float64
+    # Critical hardware alert
+    hardware_critical_alert::Bool
+    hardware_alert_reason::String
+    # NEW: FFT analyzers for oscillation detection
+    fft_cpu::FFTAnalyzer
+    fft_fan::FFTAnalyzer
+    cpu_oscillation_detected::Bool
+    fan_hunting_detected::Bool
+    # NEW: Markov chain for behavioral analysis
+    markov::MarkovChain
+    prev_fan_rpm::Int
+    behavioral_anomaly::Bool
+    behavioral_anomaly_desc::String
+    # Physics-Aware Diagnostic Engine
+    physics_engine::PhysicsEngine
 end
 
 function AIState()
     AIState(MetricAnalyzer("CPU"), MetricAnalyzer("Memory"), MetricAnalyzer("IO_Throughput"),
         MetricAnalyzer("IO_Latency"), MetricAnalyzer("Network"), MetricAnalyzer("Temperature"),
         MetricAnalyzer("GPU"), PhysicalCoherence(30), TDigest(100.0), TDigest(100.0), TDigest(100.0),
-        0.0, "initializing", 1.0, 0, time())
+        0.0, "initializing", 1.0, 0, time(),
+        IsolationForest(n_trees=50, sample_size=128, n_features=6),
+        0.0, false, "",
+        FFTAnalyzer(64, 1.0),   # CPU FFT (64 samples, 1 Hz)
+        FFTAnalyzer(64, 1.0),   # Fan FFT
+        false, false,
+        MarkovChain(100),
+        0, false, "",
+        PhysicsEngine())
 end
 
 const AI_STATE = Ref{AIState}()
@@ -749,6 +775,72 @@ function update_anomaly!(monitor::SystemMonitor)
     monitor.anomaly.gpu = score_gpu_anomaly(monitor)
     monitor.anomaly.temp = score_temp_anomaly(monitor)
 
+    # NEW: Isolation Forest update
+    features = build_feature_vector_from_monitor(monitor)
+    add_sample!(ai.iforest, features)
+    ai.iforest_score = anomaly_score(ai.iforest, features)
+
+    # NEW: Critical hardware anomaly detection
+    ai.hardware_critical_alert = false
+    ai.hardware_alert_reason = ""
+    fan_rpm = 0
+    if monitor.hardware !== nothing
+        cpu_temp = get_cpu_temp(monitor)
+        fan_rpm = monitor.hardware.primary_cpu_fan_rpm
+
+        # Fan at 0 RPM while CPU temp > 80°C
+        if fan_rpm == 0 && cpu_temp > 80.0
+            ai.hardware_critical_alert = true
+            ai.hardware_alert_reason = "Fan stopped (0 RPM) with high CPU temp ($(round(cpu_temp, digits=1))°C)"
+        end
+
+        # Check for any stopped fan
+        if has_stopped_fan(monitor.hardware) && cpu_temp > 70.0
+            ai.hardware_critical_alert = true
+            ai.hardware_alert_reason = "Fan failure detected with elevated temperature"
+        end
+    end
+
+    # NEW: FFT spectral analysis
+    cpu_usage = get_cpu_usage(monitor)
+    add_sample!(ai.fft_cpu, cpu_usage)
+    add_sample!(ai.fft_fan, Float64(fan_rpm))
+
+    # Run FFT analysis periodically (every 32 samples)
+    if ai.sample_count % 32 == 0
+        analyze!(ai.fft_cpu)
+        ai.cpu_oscillation_detected = detect_cpu_throttling_oscillation(ai.fft_cpu)
+
+        analyze!(ai.fft_fan)
+        ai.fan_hunting_detected = detect_fan_hunting(ai.fft_fan)
+    end
+
+    # NEW: Markov behavioral analysis
+    current_state = infer_system_state_from_monitor(monitor, ai.prev_fan_rpm)
+    update_state!(ai.markov, current_state)
+    ai.prev_fan_rpm = fan_rpm
+
+    ai.behavioral_anomaly = is_transition_anomalous(ai.markov)
+    if ai.behavioral_anomaly
+        anomaly = get_last_anomaly(ai.markov)
+        if anomaly !== nothing
+            ai.behavioral_anomaly_desc = "Suspicious transition: $(state_name(anomaly[1])) -> $(state_name(anomaly[2]))"
+        end
+    else
+        ai.behavioral_anomaly_desc = ""
+    end
+
+    # Physics-Aware Diagnostic Engine update
+    if monitor.full_sensors !== nothing
+        update_physics_engine!(
+            ai.physics_engine,
+            monitor.full_sensors,
+            monitor,
+            get_cpu_usage(monitor),
+            get_cpu_temp(monitor)
+        )
+    end
+
     w = (cpu=0.20, mem=0.20, io=0.15, net=0.10, gpu=0.15, temp=0.20)
     gpu_c = monitor.gpu !== nothing ? w.gpu * monitor.anomaly.gpu : 0.0
     gpu_w = monitor.gpu !== nothing ? w.gpu : 0.0
@@ -759,8 +851,18 @@ function update_anomaly!(monitor::SystemMonitor)
     monitor.anomaly.overall = (w.cpu * monitor.anomaly.cpu + w.mem * monitor.anomaly.mem +
                                w.io * monitor.anomaly.io + w.net * monitor.anomaly.net + gpu_c + temp_c) / total_w
 
+    # Include IsolationForest score in overall (20% weight)
+    monitor.anomaly.overall = 0.8 * monitor.anomaly.overall + 0.2 * ai.iforest_score
+
     (ai.coherence.temp_without_load || ai.coherence.latency_without_io) &&
         (monitor.anomaly.overall = min(1.0, monitor.anomaly.overall + 0.2))
+
+    # Critical hardware alert overrides
+    ai.hardware_critical_alert && (monitor.anomaly.overall = 1.0)
+
+    # Boost anomaly for oscillations and behavioral anomalies
+    (ai.cpu_oscillation_detected || ai.fan_hunting_detected) && (monitor.anomaly.overall = min(1.0, monitor.anomaly.overall + 0.15))
+    ai.behavioral_anomaly && (monitor.anomaly.overall = min(1.0, monitor.anomaly.overall + 0.1))
 
     push_metric!(monitor.history, get_cpu_usage(monitor), get_memory_usage_percent(monitor),
         monitor.network.rx_bps / 1e6, monitor.network.tx_bps / 1e6,

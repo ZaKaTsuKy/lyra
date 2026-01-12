@@ -499,6 +499,115 @@ function update_rate!(tracker::RateTracker, current_value::Int)
 end
 
 # ============================
+# HARDWARE SENSORS (NEW - for voltages and fans)
+# ============================
+
+"""Voltage sensor reading"""
+struct VoltageSensor
+    label::String       # e.g., "Vcore", "+12V"
+    value::Float64      # Volts
+    chip::String        # e.g., "nct6775"
+    index::Int          # Sensor index (in0, in1, etc.)
+end
+
+"""Fan sensor reading"""
+struct FanSensor
+    label::String       # e.g., "CPU Fan", "System Fan"
+    rpm::Int            # Revolutions per minute
+    chip::String        # e.g., "nct6775"
+    index::Int          # Sensor index (fan1, fan2, etc.)
+end
+
+"""Aggregated hardware sensors snapshot"""
+mutable struct HardwareSensors
+    voltages::Vector{VoltageSensor}
+    fans::Vector{FanSensor}
+    timestamp::Float64
+    primary_cpu_fan_rpm::Int        # Cached for quick access
+    vcore_voltage::Float64          # Cached for quick access
+end
+
+HardwareSensors() = HardwareSensors(VoltageSensor[], FanSensor[], time(), 0, 0.0)
+
+# ============================
+# EXTENDED SENSORS (Full Integration)
+# ============================
+
+"""Extended CPU temperatures from k10temp (AMD) or coretemp (Intel)"""
+struct CPUTemperatureExtended
+    tctl::Float64               # Control temp (k10temp)
+    tdie::Float64               # Die temp (k10temp)
+    tccd::Vector{Float64}       # Per-CCD temps (Zen2+)
+    tccd_max::Float64           # Max CCD temp
+    package::Float64            # Package temp (coretemp)
+    cores::Vector{Float64}      # Per-core temps (coretemp)
+    critical::Float64           # Critical threshold
+end
+
+CPUTemperatureExtended() = CPUTemperatureExtended(0.0, 0.0, Float64[], 0.0, 0.0, Float64[], 100.0)
+
+"""GPU sensors from amdgpu or nvidia-smi"""
+struct GPUSensors
+    edge_temp::Float64          # Edge temperature
+    hotspot_temp::Float64       # Junction/Hotspot (if available)
+    mem_temp::Float64           # Memory temperature
+    vdd_voltage::Float64        # GPU core voltage (mV -> V)
+    power_w::Float64            # Power consumption
+    ppt_limit::Float64          # Power limit
+end
+
+GPUSensors() = GPUSensors(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+"""NVMe storage sensor"""
+struct NVMeSensor
+    name::String                # Device name (nvme0, nvme1)
+    temp_composite::Float64     # Main composite temp
+    temp_sensor1::Float64       # Sensor 1 (if available)
+    temp_sensor2::Float64       # Sensor 2 (if available)
+end
+
+NVMeSensor() = NVMeSensor("", 0.0, 0.0, 0.0)
+
+"""Generic temperature sensor"""
+struct TempSensor
+    label::String               # e.g., "SYSTIN", "AUXTIN"
+    value::Float64              # Temperature in Celsius
+    chip::String                # Source chip
+    index::Int                  # Sensor index
+end
+
+"""
+Full sensors aggregate - captures ALL available hwmon data.
+This is the master struct sent to frontend for comprehensive monitoring.
+"""
+mutable struct FullSensors
+    # Specialized sensors (chip-specific parsing)
+    cpu_temps::CPUTemperatureExtended
+    gpu_sensors::Union{Nothing,GPUSensors}
+    nvme_sensors::Vector{NVMeSensor}
+
+    # Generic sensors (Super I/O chips like nct6775, it87)
+    voltages::Vector{VoltageSensor}
+    fans::Vector{FanSensor}
+    temps_generic::Vector{TempSensor}
+
+    # Metadata
+    timestamp::Float64
+    chip_names::Vector{String}  # All detected hwmon chips
+end
+
+FullSensors() = FullSensors(
+    CPUTemperatureExtended(),
+    nothing,
+    NVMeSensor[],
+    VoltageSensor[],
+    FanSensor[],
+    TempSensor[],
+    time(),
+    String[]
+)
+
+# ============================
 # SYSTEM MONITOR ROOT
 # ============================
 
@@ -540,6 +649,12 @@ mutable struct SystemMonitor
     ctxt_rate::RateTracker
     intr_rate::RateTracker
 
+    # NEW: Hardware sensors (voltages, fans)
+    hardware::Union{Nothing,HardwareSensors}
+
+    # NEW: Full sensors snapshot (all hwmon data)
+    full_sensors::Union{Nothing,FullSensors}
+
     # Timestamps
     last_update::Float64
     update_count::Int
@@ -569,6 +684,8 @@ function SystemMonitor()
         StaticCache(),
         RateTracker(),
         RateTracker(),
+        nothing,  # hardware sensors (initialized later)
+        nothing,  # full_sensors (initialized later)
         time(),
         0
     )

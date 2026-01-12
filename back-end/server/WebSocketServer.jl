@@ -31,6 +31,17 @@ get_allowed_origins() = SERVER_CONFIG.allowed_origins
 const SERVER_RUNNING = Ref{Bool}(true)
 
 # ============================
+# JSON SANITIZATION HELPERS
+# ============================
+
+"""
+Sanitize float values for JSON serialization.
+Inf, -Inf, and NaN are not valid in JSON spec, so we convert them to safe values.
+"""
+sanitize_float(x::Float64)::Float64 = isfinite(x) ? x : (isnan(x) ? 0.0 : (x > 0 ? 1e308 : -1e308))
+sanitize_float(x::Number)::Float64 = sanitize_float(Float64(x))
+
+# ============================
 # DTO STRUCTURES (Immutable JSON Payloads)
 # ============================
 
@@ -225,6 +236,149 @@ end
 
 StructTypes.StructType(::Type{ProcessInstant}) = StructTypes.Struct()
 
+"""Hardware health status for frontend (NEW)"""
+struct HardwareHealthDTO
+    thermal_efficiency::Float64     # 0.0 - 1.0
+    fan_status::String              # "healthy", "degraded", "failing", "stopped"
+    voltage_stability::Float64      # 0.0 - 1.0
+    cooling_headroom::Float64       # Degrees before throttle
+    primary_fan_rpm::Int
+    vcore_voltage::Float64
+    dry_thermal_paste::Bool
+    dusty_fan::Bool
+    unstable_voltage::Bool
+    diagnostics::Vector{String}
+end
+
+StructTypes.StructType(::Type{HardwareHealthDTO}) = StructTypes.Struct()
+
+"""Cognitive AI insights for frontend (NEW)"""
+struct CognitiveInsightsDTO
+    iforest_score::Float64
+    oscillation_detected::Bool
+    oscillation_type::String
+    spectral_entropy_cpu::Float64
+    spectral_entropy_fan::Float64
+    behavioral_state::String
+    behavioral_anomaly::Bool
+    behavioral_description::String
+    state_stability::Float64
+end
+
+StructTypes.StructType(::Type{CognitiveInsightsDTO}) = StructTypes.Struct()
+
+# ============================
+# FULL SENSORS DTO (NEW)
+# ============================
+
+"""Extended CPU temperatures DTO"""
+struct CPUTempsDTO
+    tctl::Float64
+    tdie::Float64
+    tccd::Vector{Float64}
+    tccd_max::Float64
+    package::Float64
+    cores::Vector{Float64}
+    critical::Float64
+end
+
+StructTypes.StructType(::Type{CPUTempsDTO}) = StructTypes.Struct()
+
+"""GPU sensors DTO"""
+struct GPUSensorsDTO
+    edge_temp::Float64
+    hotspot_temp::Float64
+    mem_temp::Float64
+    vdd_voltage::Float64
+    power_w::Float64
+    ppt_limit::Float64
+end
+
+StructTypes.StructType(::Type{GPUSensorsDTO}) = StructTypes.Struct()
+
+"""NVMe sensor DTO"""
+struct NVMeSensorDTO
+    name::String
+    temp_composite::Float64
+    temp_sensor1::Float64
+    temp_sensor2::Float64
+end
+
+StructTypes.StructType(::Type{NVMeSensorDTO}) = StructTypes.Struct()
+
+"""Generic temperature DTO"""
+struct TempDTO
+    label::String
+    value::Float64
+    chip::String
+    index::Int
+end
+
+StructTypes.StructType(::Type{TempDTO}) = StructTypes.Struct()
+
+"""Voltage DTO"""
+struct VoltageDTO
+    label::String
+    value::Float64
+    chip::String
+    index::Int
+end
+
+StructTypes.StructType(::Type{VoltageDTO}) = StructTypes.Struct()
+
+"""Fan DTO"""
+struct FanDTO
+    label::String
+    rpm::Int
+    chip::String
+    index::Int
+end
+
+StructTypes.StructType(::Type{FanDTO}) = StructTypes.Struct()
+
+"""Full sensors aggregate DTO"""
+struct FullSensorsDTO
+    cpu_temps::CPUTempsDTO
+    gpu_sensors::Union{Nothing,GPUSensorsDTO}
+    nvme_sensors::Vector{NVMeSensorDTO}
+    voltages::Vector{VoltageDTO}
+    fans::Vector{FanDTO}
+    temps_generic::Vector{TempDTO}
+    chip_names::Vector{String}
+end
+
+StructTypes.StructType(::Type{FullSensorsDTO}) = StructTypes.Struct()
+StructTypes.StructType(::Type{Union{Nothing,GPUSensorsDTO}}) = StructTypes.Struct()
+
+# ============================
+# PHYSICS DIAGNOSTICS DTO (NEW)
+# ============================
+
+"""Physics-aware diagnostic engine results for frontend"""
+struct PhysicsDiagnosticsDTO
+    thermal_efficiency_pct::Float64      # 100 - efficiency_drop_pct
+    thermal_degradation::Bool
+    rth_baseline::Float64                # Baseline thermal resistance
+    rth_instant::Float64                 # Current thermal resistance
+    fan_hunting::Bool
+    rpm_variance::Float64
+    temp_derivative::Float64             # dT/dt (°C/s)
+    vcore_unstable::Bool
+    rail_12v_unstable::Bool
+    vcore_variance_mv::Float64           # Vcore variance in mV
+    time_to_throttle_sec::Float64
+    throttle_imminent::Bool
+    is_transient_spike::Bool
+    workload_state::String
+    temp_warning::Float64                # Dynamic threshold
+    temp_critical::Float64               # Dynamic threshold
+    bottleneck::String
+    bottleneck_severity::Float64
+    diagnostics::Vector{String}          # Human-readable messages
+end
+
+StructTypes.StructType(::Type{PhysicsDiagnosticsDTO}) = StructTypes.Struct()
+
 """UPDATE_PAYLOAD: Sent every loop iteration (fully immutable)"""
 struct UpdatePayload
     type::String
@@ -237,12 +391,20 @@ struct UpdatePayload
     system::SystemInstant
     anomaly::AnomalyInstant
     top_processes::Vector{ProcessInstant}
+    hardware_health::Union{Nothing,HardwareHealthDTO}
+    cognitive::Union{Nothing,CognitiveInsightsDTO}
+    full_sensors::Union{Nothing,FullSensorsDTO}
+    physics_diagnostics::Union{Nothing,PhysicsDiagnosticsDTO}  # NEW
     update_count::Int
     timestamp::Float64
 end
 
 StructTypes.StructType(::Type{UpdatePayload}) = StructTypes.Struct()
 StructTypes.StructType(::Type{Union{Nothing,GPUInstant}}) = StructTypes.Struct()
+StructTypes.StructType(::Type{Union{Nothing,HardwareHealthDTO}}) = StructTypes.Struct()
+StructTypes.StructType(::Type{Union{Nothing,CognitiveInsightsDTO}}) = StructTypes.Struct()
+StructTypes.StructType(::Type{Union{Nothing,FullSensorsDTO}}) = StructTypes.Struct()
+StructTypes.StructType(::Type{Union{Nothing,PhysicsDiagnosticsDTO}}) = StructTypes.Struct()
 
 # ============================
 # CLIENT MANAGEMENT (Thread-Safe)
@@ -532,8 +694,8 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         String(a.net_trend),
         # Regime from AI state
         String(get_current_regime()),
-        # Predictions
-        [PredictionDTO(String(p.metric), Float64(p.time_to_critical_sec), Float64(p.confidence))
+        # Predictions (sanitize Inf values for JSON)
+        [PredictionDTO(String(p.metric), sanitize_float(p.time_to_critical_sec), Float64(p.confidence))
          for p in a.predictions],
         # Coherence alerts
         Bool(ai_state.coherence.temp_without_load),
@@ -553,6 +715,163 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         for p in procs_sorted[1:min(5, length(procs_sorted))]
     ]
 
+    # Hardware health (NEW)
+    hardware_health = if monitor.hardware !== nothing
+        hw = monitor.hardware
+        health = get_hardware_health()
+        HardwareHealthDTO(
+            Float64(health.thermal_efficiency),
+            fan_status_string(health.fan_status),
+            Float64(health.voltage_stability),
+            Float64(health.cooling_headroom),
+            Int(hw.primary_cpu_fan_rpm),
+            Float64(hw.vcore_voltage),
+            Bool(health.dry_thermal_paste),
+            Bool(health.dusty_fan),
+            Bool(health.unstable_voltage),
+            copy(health.diagnostics)
+        )
+    else
+        nothing
+    end
+
+    # Cognitive Insights (NEW)
+    cognitive = try
+        # Oscillation type
+        oscillation_type = if ai_state.cpu_oscillation_detected
+            "CPU Throttling"
+        elseif ai_state.fan_hunting_detected
+            "Fan Hunting"
+        else
+            "None"
+        end
+
+        # Spectral entropy
+        cpu_spec = get_spectral_result(ai_state.fft_cpu)
+        fan_spec = get_spectral_result(ai_state.fft_fan)
+
+        # Behavioral stability
+        beh_res = get_behavioral_result(ai_state.markov)
+
+        CognitiveInsightsDTO(
+            Float64(ai_state.iforest_score),
+            Bool(ai_state.cpu_oscillation_detected || ai_state.fan_hunting_detected),
+            String(oscillation_type),
+            Float64(cpu_spec.spectral_entropy),
+            Float64(fan_spec.spectral_entropy),
+            state_name(ai_state.markov.current_state),
+            Bool(ai_state.behavioral_anomaly),
+            String(ai_state.behavioral_anomaly_desc),
+            Float64(beh_res.state_stability)
+        )
+    catch e
+        # Fallback if AI state isn't fully initialized
+        CognitiveInsightsDTO(0.0, false, "None", 0.0, 0.0, "Unknown", false, "", 1.0)
+    end
+
+    # Full Sensors (NEW)
+    full_sensors = if monitor.full_sensors !== nothing
+        fs = monitor.full_sensors
+
+        # Build CPU temps DTO
+        cpu_temps_dto = CPUTempsDTO(
+            Float64(fs.cpu_temps.tctl),
+            Float64(fs.cpu_temps.tdie),
+            copy(fs.cpu_temps.tccd),
+            Float64(fs.cpu_temps.tccd_max),
+            Float64(fs.cpu_temps.package),
+            copy(fs.cpu_temps.cores),
+            Float64(fs.cpu_temps.critical)
+        )
+
+        # Build GPU sensors DTO
+        gpu_sensors_dto = if fs.gpu_sensors !== nothing
+            gs = fs.gpu_sensors
+            GPUSensorsDTO(
+                Float64(gs.edge_temp),
+                Float64(gs.hotspot_temp),
+                Float64(gs.mem_temp),
+                Float64(gs.vdd_voltage),
+                Float64(gs.power_w),
+                Float64(gs.ppt_limit)
+            )
+        else
+            nothing
+        end
+
+        # Build NVMe DTOs
+        nvme_dtos = [
+            NVMeSensorDTO(String(n.name), Float64(n.temp_composite), Float64(n.temp_sensor1), Float64(n.temp_sensor2))
+            for n in fs.nvme_sensors
+        ]
+
+        # Build voltage DTOs
+        voltage_dtos = [
+            VoltageDTO(String(v.label), Float64(v.value), String(v.chip), Int(v.index))
+            for v in fs.voltages
+        ]
+
+        # Build fan DTOs
+        fan_dtos = [
+            FanDTO(String(f.label), Int(f.rpm), String(f.chip), Int(f.index))
+            for f in fs.fans
+        ]
+
+        # Build temp DTOs
+        temp_dtos = [
+            TempDTO(String(t.label), Float64(t.value), String(t.chip), Int(t.index))
+            for t in fs.temps_generic
+        ]
+
+        FullSensorsDTO(
+            cpu_temps_dto,
+            gpu_sensors_dto,
+            nvme_dtos,
+            voltage_dtos,
+            fan_dtos,
+            temp_dtos,
+            copy(fs.chip_names)
+        )
+    else
+        nothing
+    end
+
+    # Physics Diagnostics (NEW)
+    physics_diagnostics = try
+        pe = get_ai_state().physics_engine
+        te = pe.thermal_efficiency
+        fs_mod = pe.fan_stability
+        pq = pe.power_quality
+        ts = pe.thermal_saturation
+        wc = pe.workload_classifier
+        bd = pe.bottleneck_detector
+
+        PhysicsDiagnosticsDTO(
+            Float64(100.0 - te.efficiency_drop_pct),
+            Bool(te.degradation_alert),
+            Float64(te.rth_baseline),
+            Float64(te.rth_instant),
+            Bool(fs_mod.pumping_detected),
+            Float64(fs_mod.rpm_variance),
+            Float64(fs_mod.temp_derivative),
+            Bool(pq.vdroop_abnormal),
+            Bool(pq.rail_12v_unstable),
+            Float64(sqrt(pq.vcore_variance) * 1000),  # Convert to mV
+            sanitize_float(ts.time_to_critical_sec),  # Can be Inf
+            Bool(ts.throttle_imminent),
+            Bool(ts.is_transient_spike),
+            String(workload_name(wc.current_state)),
+            Float64(wc.temp_warning),
+            Float64(wc.temp_critical),
+            String(bottleneck_name(bd.bottleneck)),
+            Float64(bd.bottleneck_severity),
+            copy(pe.diagnostics)
+        )
+    catch e
+        @debug "Error building PhysicsDiagnosticsDTO" exception = e
+        nothing
+    end
+
     return UpdatePayload(
         "update",
         cpu,
@@ -564,6 +883,10 @@ function create_snapshot(monitor::SystemMonitor)::UpdatePayload
         system,
         anomaly,
         top_processes,
+        hardware_health,
+        cognitive,
+        full_sensors,
+        physics_diagnostics,
         Int(monitor.update_count),
         Float64(time())
     )
@@ -663,32 +986,36 @@ function start_websocket_server!(port::Int=8080)
             end
 
             # Keep connection alive, listen for client messages
-            while !eof(ws) && SERVER_RUNNING[]
+            # Note: HTTP.jl WebSocket doesn't have eof() or isopen()
+            # Use infinite loop with exception-based termination
+            while SERVER_RUNNING[]
+                local msg
                 try
                     msg = HTTP.WebSockets.receive(ws)
-
-                    # Message size limit check
-                    if length(msg) > get_max_message_size()
-                        @warn "Message too large: $(length(msg)) bytes (max: $(get_max_message_size()))"
-                        safe_send(ws, """{"type":"error","message":"Message too large"}""")
-                        break  # Close connection
-                    end
-
-                    # Rate limit check
-                    if !check_rate_limit!(ws)
-                        safe_send(ws, """{"type":"error","message":"Rate limit exceeded"}""")
-                        break  # Close connection
-                    end
-
-                    # Handle valid messages
-                    if msg == "ping"
-                        safe_send(ws, "pong")
-                    end
                 catch e
+                    # Connection closed (normal) or error
                     if !(e isa EOFError || e isa HTTP.WebSockets.WebSocketError)
-                        @warn "WebSocket receive error" exception = e
+                        @debug "WebSocket closed" exception = e
                     end
                     break
+                end
+
+                # Message size limit check
+                if length(msg) > get_max_message_size()
+                    @warn "Message too large: $(length(msg)) bytes (max: $(get_max_message_size()))"
+                    safe_send(ws, """{"type":"error","message":"Message too large"}""")
+                    break  # Close connection
+                end
+
+                # Rate limit check
+                if !check_rate_limit!(ws)
+                    safe_send(ws, """{"type":"error","message":"Rate limit exceeded"}""")
+                    break  # Close connection
+                end
+
+                # Handle valid messages
+                if msg == "ping"
+                    safe_send(ws, "pong")
                 end
             end
         catch e

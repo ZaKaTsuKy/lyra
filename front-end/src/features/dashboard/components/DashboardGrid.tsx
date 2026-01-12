@@ -1,0 +1,79 @@
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    type DragEndEvent
+} from '@dnd-kit/core';
+import {
+    SortableContext,
+    sortableKeyboardCoordinates,
+    rectSortingStrategy
+} from '@dnd-kit/sortable';
+import { usePreferencesStore } from '@/store/preferencesStore';
+import { SortableWidget } from './SortableWidget';
+import { Suspense, useMemo } from 'react';
+import { Skeleton } from '@/shared/components/ui/skeleton';
+import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
+import { getWidgetDefinition } from '../config/widgetRegistry';
+
+export function DashboardGrid() {
+    const widgets = usePreferencesStore((s) => s.widgets);
+    const moveWidget = usePreferencesStore((s) => s.moveWidget);
+
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    // Memoize widget IDs to prevent array recreation on every render
+    const widgetIds = useMemo(() => widgets.map(w => w.id), [widgets]);
+
+    // Memoize filtered visible widgets to prevent filter on every render
+    const visibleWidgets = useMemo(() => widgets.filter(w => w.isVisible), [widgets]);
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+
+        if (active.id !== over?.id && over) {
+            moveWidget(active.id as string, over.id as string);
+        }
+    };
+
+    return (
+        <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+        >
+            <SortableContext
+                items={widgetIds}
+                strategy={rectSortingStrategy}
+            >
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 auto-rows-[minmax(200px,auto)]">
+                    {visibleWidgets.map((widget) => {
+                        const def = getWidgetDefinition(widget.type);
+
+                        if (!def) return null;
+
+                        const Component = def.component;
+
+                        return (
+                            <SortableWidget key={widget.id} id={widget.id}>
+                                <ErrorBoundary>
+                                    <Suspense fallback={<Skeleton className="h-full w-full rounded-xl" />}>
+                                        <Component />
+                                    </Suspense>
+                                </ErrorBoundary>
+                            </SortableWidget>
+                        );
+                    })}
+                </div>
+            </SortableContext>
+        </DndContext>
+    );
+}
