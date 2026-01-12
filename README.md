@@ -1,9 +1,10 @@
 # LYRA
 ## Dashboard de Monitoring Système avec Intelligence Artificielle
 
-**Version:** 0.1.0  
-**Langage:** Julia 1.9+  
-**Plateforme:** Linux (avec architecture préparée pour Windows/MacOS)  
+**Version:** 2.0.0  
+**Stack Backend:** Julia 1.9+ avec WebSocket Server  
+**Stack Frontend:** React 19 + TypeScript + Three.js  
+**Plateforme:** Linux (architecture préparée pour Windows/macOS)  
 **Licence:** MIT
 
 ---
@@ -11,16 +12,18 @@
 ## Table des Matières
 
 1. [Présentation](#présentation)
-2. [Fonctionnalités](#fonctionnalités)
-3. [Architecture](#architecture)
-4. [Installation](#installation)
-5. [Utilisation](#utilisation)
-6. [Module IA - Analyse Approfondie](#module-ia---analyse-approfondie)
-7. [Structure du Projet](#structure-du-projet)
-8. [Référence des Modules](#référence-des-modules)
-9. [Personnalisation](#personnalisation)
-10. [Dépannage](#dépannage)
-11. [Roadmap](#roadmap)
+2. [Architecture](#architecture)
+3. [Fonctionnalités](#fonctionnalités)
+4. [Module IA - Analyse Approfondie](#module-ia---analyse-approfondie)
+5. [Physics Engine - Diagnostic Avancé](#physics-engine---diagnostic-avancé)
+6. [Communication WebSocket](#communication-websocket)
+7. [Interface Web (Frontend)](#interface-web-frontend)
+8. [Installation](#installation)
+9. [Configuration](#configuration)
+10. [Structure du Projet](#structure-du-projet)
+11. [Référence des Modules](#référence-des-modules)
+12. [Dépannage](#dépannage)
+13. [Roadmap](#roadmap)
 
 ---
 
@@ -28,27 +31,97 @@
 
 ### Vision
 
-LYRA est un dashboard de monitoring système en temps réel qui se distingue par son **moteur d'intelligence artificielle statistique** intégré. Contrairement aux outils de monitoring traditionnels qui se contentent d'afficher des métriques brutes, LYRA analyse en continu le comportement du système pour :
+LYRA est un dashboard de monitoring système en temps réel qui se distingue par son **moteur d'intelligence artificielle statistique et comportementale** intégré. Contrairement aux outils de monitoring traditionnels qui affichent des métriques brutes, LYRA analyse en continu le comportement du système pour :
 
 - **Détecter les anomalies** avant qu'elles ne deviennent des problèmes
 - **Prédire les situations critiques** (mémoire pleine, surchauffe, saturation disque)
 - **Identifier les changements de régime** (passage idle → compute → gaming)
 - **Corréler les métriques** pour détecter les incohérences matérielles
+- **Diagnostiquer les problèmes physiques** (pâte thermique sèche, ventilateur défaillant, PSU instable)
 
-### Philosophie
+### Philosophie de Conception
 
-Le projet repose sur trois principes fondamentaux :
+Le projet repose sur quatre principes fondamentaux :
 
-1. **Efficacité mémoire O(1)** : Les algorithmes statistiques (T-Digest, Welford, EWMA) fonctionnent en streaming sans accumulation de données historiques
+1. **Efficacité mémoire O(1)** : Algorithmes statistiques streaming (T-Digest, Welford, EWMA) sans accumulation de données historiques
 2. **Zéro dépendance externe** : Lecture directe de `/proc` et `/sys` sans agents ni daemons
-3. **Interface TUI native** : Affichage terminal fluide avec double-buffering, sans bibliothèque graphique lourde
+3. **Communication temps réel** : WebSocket bidirectionnel avec snapshots atomiques thread-safe
+4. **Interface moderne** : React 19 + Three.js pour visualisation 3D du système (Digital Twin)
 
 ### Public Cible
 
 - Administrateurs système souhaitant un outil de diagnostic intelligent
 - Développeurs analysant les performances de leurs applications
-- Passionnés de hardware surveillant leur configuration (GPU, températures)
+- Passionnés de hardware surveillant leur configuration (GPU, températures, voltages)
 - Chercheurs en observabilité et AIOps
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              FRONTEND (React 19)                             │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────────────────┐ │
+│  │ Dashboard   │ │ AI Widgets  │ │ Hardware    │ │ Digital Twin (Three.js) │ │
+│  │ Grid (DnD)  │ │ Anomaly/Cog │ │ Sensors     │ │ 3D Tower Model          │ │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────────────────┘ │
+│                              │                                               │
+│                    Zustand TelemetryStore                                    │
+│                              │ WebSocket                                     │
+└──────────────────────────────┼───────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         WEBSOCKET SERVER (Oxygen.jl)                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ • Thread-safe client manager (MAX_CLIENTS)                          │    │
+│  │ • Rate limiting (configurable)                                      │    │
+│  │ • CORS middleware                                                   │    │
+│  │ • Atomic snapshot pattern (deep-copy DTOs)                          │    │
+│  │ • Graceful shutdown                                                 │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                              │                                               │
+│                    create_snapshot(monitor)                                  │
+│                              │                                               │
+└──────────────────────────────┼───────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         BACKEND (Julia Core)                                 │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                    SystemMonitor (État Global)                       │    │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌──────────────┐  │    │
+│  │  │CPUInfo  │ │MemInfo  │ │GPUInfo  │ │NetInfo  │ │FullSensorsDTO│  │    │
+│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └──────────────┘  │    │
+│  │  ┌─────────────────────────────────────────────────────────────┐   │    │
+│  │  │                    AIState (Intelligence)                    │   │    │
+│  │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────────┐  │   │    │
+│  │  │  │ Trackers │ │ IForest  │ │ Spectral │ │ PhysicsEngine  │  │   │    │
+│  │  │  │ (MAD,HW) │ │ (Anomaly)│ │ (FFT)    │ │ (6 modules)    │  │   │    │
+│  │  │  └──────────┘ └──────────┘ └──────────┘ └────────────────┘  │   │    │
+│  │  └─────────────────────────────────────────────────────────────┘   │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                              │                                               │
+│                    OS/Linux/*.jl Collectors                                  │
+│                              │                                               │
+└──────────────────────────────┼───────────────────────────────────────────────┘
+                               │
+                               ▼
+              ┌─────────────────────────────────────┐
+              │         Linux Kernel                 │
+              │  /proc  │  /sys  │  nvidia-smi      │
+              └─────────────────────────────────────┘
+```
+
+### Flux de Données
+
+1. **Collecte** (toutes les secondes par défaut) : Les modules `OS/Linux/*.jl` lisent `/proc`, `/sys` et `nvidia-smi`
+2. **Agrégation** : Les métriques sont stockées dans `SystemMonitor`
+3. **Analyse IA** : `AI.jl` + modules IA spécialisés calculent scores, tendances et prédictions
+4. **Snapshot** : `create_snapshot()` crée une copie immuable thread-safe (deep-copy DTOs)
+5. **Broadcast** : Le serveur WebSocket envoie le JSON à tous les clients connectés
+6. **Rendu** : L'interface React met à jour les widgets via Zustand store
 
 ---
 
@@ -58,208 +131,54 @@ Le projet repose sur trois principes fondamentaux :
 
 | Composant | Métriques | Source |
 |-----------|-----------|--------|
-| **CPU** | Usage par cœur, fréquences, load average, température, context switches/s, interrupts/s, PSI | `/proc/stat`, `/proc/cpuinfo`, `/sys/class/hwmon`, `/proc/pressure` |
-| **Mémoire** | Totale/utilisée/disponible, swap, composition (anon/cache/buffers), huge pages, dirty pages | `/proc/meminfo`, `/proc/vmstat` |
-| **GPU** | Utilisation, VRAM, température, puissance, clocks SM/mem, throttling | `nvidia-smi` |
-| **Réseau** | Débit RX/TX par interface, paquets/s, erreurs, drops, connexions TCP (ESTABLISHED/TIME_WAIT/CLOSE_WAIT) | `/proc/net/dev`, `/proc/net/tcp` |
-| **Disques** | Espace par point de montage, IOPS, débit lecture/écriture, latence moyenne, queue depth | `df`, `/proc/diskstats` |
-| **Batterie** | Pourcentage, état (charge/décharge), puissance, temps restant, santé | `/sys/class/power_supply` |
-| **Processus** | Top 15 par CPU, état (R/S/D/Z), threads, I/O par processus | `/proc/[pid]/*` |
+| **CPU** | Usage, fréquences, load average, température (Tctl/Tdie/cores), context switches/s, interrupts/s, PSI | `/proc/stat`, `/proc/cpuinfo`, `/sys/class/hwmon`, `/proc/pressure` |
+| **Mémoire** | Totale/utilisée/disponible, swap, pression PSI | `/proc/meminfo`, `/proc/pressure` |
+| **GPU** | Utilisation, VRAM, température (edge/hotspot/mem), puissance, voltage VDD | `nvidia-smi`, `/sys/class/hwmon` (AMD) |
+| **Réseau** | Débit RX/TX par interface, classification trafic, connexions TCP (ESTABLISHED/TIME_WAIT) | `/proc/net/dev`, `/proc/net/tcp` |
+| **Disques** | Espace par mount, IOPS R/W, débit R/W, latence moyenne, IO wait % | `df`, `/proc/diskstats` |
+| **NVMe** | Températures composite/sensor1/sensor2 par drive | `/sys/class/hwmon` |
+| **Batterie** | Pourcentage, état, puissance, temps restant | `/sys/class/power_supply` |
+| **Voltages** | Vcore, +12V, +5V, +3.3V, VBAT | `/sys/class/hwmon` |
+| **Ventilateurs** | RPM par ventilateur (CPU, case, rear) | `/sys/class/hwmon` |
+| **Processus** | Top 5 par CPU, état (R/S/D/Z), mémoire | `/proc/[pid]/*` |
 
-### Intelligence Artificielle
+### Intelligence Artificielle (8 Moteurs)
 
-| Fonctionnalité | Algorithme | Description |
-|----------------|------------|-------------|
-| **Centiles en streaming** | T-Digest | P50, P95, P99 sans stocker l'historique complet |
-| **Z-Score robuste** | MAD (Median Absolute Deviation) | Détection d'anomalies résistante aux outliers |
-| **Prévision saisonnière** | Holt-Winters (Triple Exponential Smoothing) | Prédiction tenant compte des patterns cycliques |
-| **Détection de régime** | ADWIN (Adaptive Windowing) | Identification automatique des changements de comportement |
-| **Détection de dérive** | CUSUM (Cumulative Sum) | Alerte sur les dégradations lentes (fuites mémoire) |
-| **Cohérence physique** | Corrélation CPU↔Temp, IOPS↔Latence | Détection d'anomalies matérielles |
-| **Modèle de saturation** | Loi de Little | Estimation du point de knee et capacité maximale |
-| **Échantillonnage adaptatif** | Feedback loop | Ajustement automatique de la fréquence selon la volatilité |
+| Module | Algorithme | Description |
+|--------|------------|-------------|
+| **T-Digest** | Streaming Quantiles | P50, P95, P99 sans stocker l'historique complet |
+| **MAD Tracker** | Median Absolute Deviation | Z-Score robuste résistant aux outliers |
+| **Holt-Winters** | Triple Exponential Smoothing | Prévision avec saisonnalité (période 60s) |
+| **ADWIN** | Adaptive Windowing | Détection automatique de changement de régime |
+| **CUSUM** | Cumulative Sum | Détection de dérives lentes (fuites mémoire) |
+| **Isolation Forest** | Streaming iForest | Détection d'anomalies multivariées |
+| **FFT Spectral** | Fast Fourier Transform | Détection d'oscillations (throttling CPU, fan hunting) |
+| **Markov Behavioral** | Chaîne de Markov | Détection de transitions d'état impossibles |
 
-### Interface Utilisateur
+### Physics Engine (6 Modules de Diagnostic)
 
-- **Layout adaptatif** : 4 colonnes (≥140 cars), 3 colonnes (≥100), 2 colonnes (≥80), 1 colonne (mobile)
-- **Sparklines** : Historique visuel compact des 2 dernières minutes
-- **Heatmaps** : Visualisation de l'usage par cœur CPU
-- **Barres de progression** : Avec dégradé de couleur selon criticité
-- **Ticker d'alertes** : Notifications en temps réel des situations anormales
-- **Panneaux dédiés** : CPU, Mémoire, GPU, Réseau, Disques, Processus, Anomalies, Analytics, Saturation
+| Module | Fonction | Indicateurs |
+|--------|----------|-------------|
+| **ThermalEfficiency** | Détecte dégradation thermique | Rth baseline vs instant, % efficacité |
+| **FanStability** | Détecte fan hunting/pumping | Variance RPM, dT/dt |
+| **PowerQuality** | Monitore stabilité PSU | Vcore variance, instabilité 12V |
+| **ThermalSaturation** | Prédit temps avant throttle | Time-to-throttle, spike transient |
+| **WorkloadClassifier** | Adapte seuils au workload | IDLE/COMPUTE/GAMING/IO_INTENSIVE |
+| **BottleneckDetector** | Identifie ressource limitante | CPU/GPU/DISK/MEMORY + severity |
 
----
+### Interface Web
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         main.jl                                  │
-│                    (Boucle principale)                           │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    SystemMonitor (État global)                   │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │
-│  │CPUInfo  │ │MemInfo  │ │GPUInfo  │ │NetInfo  │ │DiskInfo │   │
-│  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘   │
-│  ┌─────────────────────┐ ┌─────────────────────────────────┐   │
-│  │  MetricHistory      │ │       AnomalyScore              │   │
-│  │  (120 samples)      │ │  (CPU, MEM, IO, NET, GPU, TEMP) │   │
-│  └─────────────────────┘ └─────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-         │                              │
-         ▼                              ▼
-┌─────────────────────┐    ┌─────────────────────────────────────┐
-│   OS/Linux/*.jl     │    │            AI.jl                    │
-│  ┌───────────────┐  │    │  ┌─────────┐ ┌─────────┐ ┌───────┐ │
-│  │ CPU.jl        │  │    │  │T-Digest │ │  MAD    │ │Welford│ │
-│  │ Memory.jl     │  │    │  └─────────┘ └─────────┘ └───────┘ │
-│  │ GPU.jl        │  │    │  ┌─────────┐ ┌─────────┐ ┌───────┐ │
-│  │ Network.jl    │  │    │  │  H-W    │ │ ADWIN   │ │ CUSUM │ │
-│  │ DiskIO.jl     │  │    │  └─────────┘ └─────────┘ └───────┘ │
-│  │ DiskSpace.jl  │  │    │  ┌─────────────────────────────┐   │
-│  │ Processes.jl  │  │    │  │   PhysicalCoherence         │   │
-│  │ Battery.jl    │  │    │  │   SaturationModel           │   │
-│  │ SystemUtils.jl│  │    │  │   AdaptiveSampler           │   │
-│  └───────────────┘  │    │  └─────────────────────────────┘   │
-└─────────────────────┘    └─────────────────────────────────────┘
-         │                              │
-         └──────────────┬───────────────┘
-                        ▼
-              ┌─────────────────┐
-              │     UI.jl       │
-              │  (Rendu TUI)    │
-              │  ┌───────────┐  │
-              │  │ Panels    │  │
-              │  │ Sparklines│  │
-              │  │ Alerts    │  │
-              │  └───────────┘  │
-              └─────────────────┘
-                        │
-                        ▼
-              ┌─────────────────┐
-              │    Terminal     │
-              │   (stdout)      │
-              └─────────────────┘
-```
-
-### Flux de Données
-
-1. **Collecte** (toutes les 0.5s par défaut) : Les modules `OS/Linux/*.jl` lisent `/proc` et `/sys`
-2. **Agrégation** : Les métriques sont stockées dans `SystemMonitor`
-3. **Analyse IA** : `AI.jl` calcule les scores d'anomalie, tendances et prédictions
-4. **Rendu** : `UI.jl` génère l'affichage ANSI et l'écrit atomiquement (double-buffering)
-
----
-
-## Installation
-
-### Prérequis
-
-- **Julia 1.9+** : [julialang.org/downloads](https://julialang.org/downloads/)
-- **Linux** : Kernel 4.x+ avec `/proc` et `/sys` montés
-- **nvidia-smi** (optionnel) : Pour le monitoring GPU NVIDIA
-
-### Installation Rapide
-
-```bash
-# Cloner le dépôt
-git clone https://github.com/zakatsuky/ai_dashboard.git
-cd ai_dashboard/back-end
-
-# Installer les dépendances Julia
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
-
-# Lancer
-julia --project=. main.jl
-```
-
-### Installation Système
-
-```bash
-# Créer un alias
-echo 'alias omni="julia --project=/chemin/vers/ai_dashboard/back-end /chemin/vers/ai_dashboard/back-end/main.jl"' >> ~/.bashrc
-source ~/.bashrc
-
-# Utiliser
-omni
-```
-
----
-
-## Utilisation
-
-### Lancement
-
-```bash
-# Mode standard (rafraîchissement 0.5s)
-julia main.jl
-
-# Mode debug (une seule itération)
-julia main.jl --once
-
-# Sans GPU
-julia main.jl --no-gpu
-
-# Sans batterie
-julia main.jl --no-battery
-
-# Sans processus
-julia main.jl --no-processes
-
-# Aide
-julia main.jl --help
-```
-
-### Contrôles
-
-| Touche | Action |
-|--------|--------|
-| `Ctrl+C` | Quitter proprement |
-
-### Lecture du Dashboard
-
-#### Panel CPU
-```
-┌── CPU ─────────────────────────┐
-│ ████████████░░░░░░░░░  45.2%   │  ← Barre de progression colorée
-│ Load: 2.45 3.12 2.89 | 8 cores │  ← Load average 1/5/15 min
-│ Cores: ▃▅▂▇▁▄▃▆                │  ← Heatmap par cœur
-│ Freq: 3200 MHz | 45K ctx/s     │  ← Fréquence et context switches
-│ History: ▂▃▅▇▆▄▃▂ ↗            │  ← Sparkline avec tendance
-└────────────────────────────────┘
-```
-
-#### Panel AI Anomaly
-```
-┌── AI ANOMALY ──────────────────┐
-│ OVERALL: 35% ↗ →MEM in 2.5h    │  ← Score global + prédiction
-│                                │
-│ CPU ████████░░ 42% ↗           │  ← Scores par métrique
-│ MEM █████████░ 65% ↗ !         │  ← ! = spike détecté
-│ I/O ████░░░░░░ 28% -           │
-│ NET ██░░░░░░░░ 12% -           │
-└────────────────────────────────┘
-```
-
-#### Panel Analytics (Mode avancé)
-```
-┌── AI ANALYTICS ────────────────┐
-│ REGIME: COMPUTE | Sample: 0.5s │  ← Régime détecté + intervalle
-│                                │
-│ --- Z-Scores (MAD) ---         │
-│ CPU: z=1.8 MEM: z=2.4!         │  ← Z-scores robustes
-│                                │
-│ --- Percentiles ---            │
-│ CPU P50:32 P95:78 P99:92       │  ← Distribution historique
-│                                │
-│ --- Coherence ---              │
-│ CPU↔Temp: 0.85 ✓               │  ← Corrélations physiques
-│ IO↔Lat: 0.72 ✓                 │
-└────────────────────────────────┘
-```
+| Fonctionnalité | Description |
+|----------------|-------------|
+| **Dashboard Grid** | Widgets réorganisables par drag & drop (dnd-kit) |
+| **Digital Twin** | Modèle 3D animé du PC (Three.js + React Three Fiber) |
+| **Sparklines** | Historique visuel des 3 dernières minutes (Recharts) |
+| **Heatmaps** | Visualisation CPU par cœur |
+| **Theme Toggle** | Mode clair/sombre |
+| **Real-time Updates** | Mise à jour ~1Hz via WebSocket |
+| **Hardware Health** | Diagnostic ventilateurs, voltages, pâte thermique |
+| **Cognitive Insights** | Score Isolation Forest, entropie spectrale, état Markov |
+| **Physics Diagnostics** | Efficacité thermique, time-to-throttle, bottleneck |
 
 ---
 
@@ -267,25 +186,28 @@ julia main.jl --help
 
 ### T-Digest : Centiles en Streaming
 
-Le T-Digest permet de calculer des centiles (médiane, P95, P99) sur un flux de données sans stocker l'historique complet. Il utilise une compression adaptative qui garde plus de précision aux extrémités de la distribution.
+Le T-Digest permet de calculer des centiles (médiane, P95, P99) sur un flux de données sans stocker l'historique complet. Il utilise une compression adaptative qui conserve plus de précision aux extrémités de la distribution.
 
 **Complexité** : O(1) espace, O(log n) par insertion
 
 ```julia
-# Structure interne
 mutable struct TDigest
     centroids::Vector{TDigestCentroid}  # Clusters compressés
-    compression::Float64                 # Facteur de compression
+    compression::Float64                 # Facteur de compression (défaut: 100)
     total_weight::Float64
+    p50::Float64  # Médiane pré-calculée
+    p95::Float64
+    p99::Float64
 end
 
-# Calcul du P95
-p95 = quantile(td, 0.95)
+# Usage
+add_sample!(td, cpu_usage)
+update_percentiles!(td)
 ```
 
 ### MAD : Z-Score Robuste
 
-Le Z-Score classique `(x - μ) / σ` est sensible aux outliers. Le MAD (Median Absolute Deviation) utilise la médiane au lieu de la moyenne :
+Le Z-Score classique `(x - μ) / σ` est sensible aux outliers. Le MAD (Median Absolute Deviation) utilise la médiane :
 
 ```
 Z_robust = (x - médiane) / (1.4826 × MAD)
@@ -297,9 +219,9 @@ Le facteur 1.4826 normalise pour être comparable à un Z-Score classique sur un
 
 L'algorithme de Holt-Winters (Triple Exponential Smoothing) décompose le signal en trois composantes :
 
-1. **Level (α)** : Valeur de base lissée
-2. **Trend (β)** : Pente de la tendance
-3. **Seasonal (γ)** : Facteurs saisonniers (période = 60 échantillons ≈ 30s)
+1. **Level (α=0.3)** : Valeur de base lissée
+2. **Trend (β=0.1)** : Pente de la tendance
+3. **Seasonal (γ=0.1)** : Facteurs saisonniers (période = 60 échantillons)
 
 ```julia
 # Prédiction à l'horizon H
@@ -308,44 +230,393 @@ prediction = (level + H × trend) × seasonal[future_idx]
 
 ### ADWIN : Détection de Changement de Régime
 
-ADWIN (ADaptive WINdowing) détecte automatiquement quand la distribution statistique d'un flux change. Il maintient une fenêtre adaptative et teste en continu si les sous-fenêtres ont des moyennes significativement différentes.
+ADWIN maintient une fenêtre adaptative et teste en continu si les sous-fenêtres ont des moyennes significativement différentes (test statistique Hoeffding).
 
 **Régimes détectés** :
-- `idle` : CPU < 20%, MEM < 50%
-- `normal` : Activité modérée
-- `compute` : CPU > 70%
-- `gaming` : GPU > 80% ou (CPU > 60% et GPU > 30%)
-- `heavy_io` : I/O > P95 × 0.7
-- `memory_intensive` : MEM > P95 × 0.9
+- `IDLE` : CPU < 20%, MEM < 50%
+- `COMPUTE` : CPU > 70%
+- `GAMING` : GPU > 80% ou (CPU > 60% et GPU > 30%)
+- `IO_INTENSIVE` : I/O > P95 × 0.7
+- `MEMORY_INTENSIVE` : MEM > P95 × 0.9
 
-### CUSUM : Détection de Dérive
+### Isolation Forest : Détection Multivariée
 
-CUSUM (CUmulative SUM) détecte les dérives lentes qui seraient invisibles avec un seuil fixe. Il accumule les écarts à la moyenne et alerte quand la somme dépasse un seuil.
-
-**Cas d'usage typique** : Détection de fuites mémoire progressives.
-
-### Cohérence Physique
-
-Le module analyse les corrélations attendues physiquement :
-
-| Corrélation | Attendue | Anomalie si |
-|-------------|----------|-------------|
-| CPU ↔ Température | Positive (> 0.5) | Température élevée sans charge CPU |
-| IOPS ↔ Latence | Positive (> 0.6) | Latence élevée sans I/O |
-
-Ces incohérences peuvent indiquer des problèmes matériels (ventilateur défaillant, disque en fin de vie).
-
-### Modèle de Saturation
-
-Basé sur la Loi de Little, le modèle estime la saturation des ressources :
+L'Isolation Forest détecte les anomalies en mesurant la profondeur moyenne nécessaire pour isoler un point. Les anomalies sont isolées plus rapidement que les points normaux.
 
 ```julia
-saturation_score = utilization >= knee_ratio ? 
-    1 - (1 - utilization)² :  # Zone de saturation (courbe quadratique)
-    utilization / knee_ratio × 0.5  # Zone linéaire
+mutable struct StreamingIsolationForest
+    trees::Vector{IsolationTreeNode}
+    sample_buffer::Matrix{Float64}  # Fenêtre glissante
+    n_trees::Int                     # 100 arbres par défaut
+    sample_size::Int                 # 256 échantillons par arbre
+end
+
+# Features utilisées:
+features = [cpu_usage, mem_usage, io_throughput, net_throughput, 
+            gpu_usage, cpu_temp, disk_latency]
 ```
 
-Le **point de knee** (genou) est le seuil à partir duquel les performances se dégradent non-linéairement (typiquement 80%).
+### Analyse Spectrale FFT
+
+Le module FFT détecte les oscillations périodiques dans les métriques :
+
+- **CPU Throttling** : Oscillations 0.1-0.5 Hz causées par thermal throttling
+- **Fan Hunting** : Oscillations 0.05-0.2 Hz des ventilateurs avec contrôleur instable
+
+```julia
+mutable struct FFTAnalyzer
+    buffer::Vector{Float64}      # Buffer circulaire 128 samples
+    power_spectrum::Vector{Float64}
+    dominant_freq::Float64
+    oscillation_detected::Bool
+end
+```
+
+### Analyse Comportementale Markov
+
+Le module Markov détecte les transitions d'état impossibles ou suspectes :
+
+```julia
+# Transitions impossibles (physiquement)
+(STATE_IDLE → STATE_THERMAL_THROTTLING)      # Pas de throttle sans charge
+(STATE_FAN_SPINUP → STATE_IDLE)              # Fans ne s'arrêtent pas instantanément
+(STATE_POWER_SAVING → STATE_OVERLOAD)        # Pas de surcharge depuis power saving
+
+# États du système
+@enum SystemState begin
+    STATE_IDLE, STATE_LIGHT_LOAD, STATE_COMPUTE, STATE_IO_BOUND,
+    STATE_MEMORY_PRESSURE, STATE_NETWORK_ACTIVE, STATE_GPU_ACTIVE,
+    STATE_THERMAL_THROTTLING, STATE_FAN_SPINUP, STATE_FAN_SPINDOWN,
+    STATE_POWER_SAVING, STATE_OVERLOAD
+end
+```
+
+---
+
+## Physics Engine - Diagnostic Avancé
+
+Le Physics Engine orchestre 6 modules de diagnostic basés sur les lois physiques du hardware.
+
+### Module 1 : ThermalEfficiency
+
+Détecte la dégradation du refroidissement via la résistance thermique apparente :
+
+```
+Rth = (T_cpu - T_ambient) / Load_cpu
+```
+
+- **Rth baseline** : Établi sur les 120 premiers échantillons à charge > 20%
+- **Alert** : Si Rth augmente de > 15% par rapport à la baseline (pâte thermique sèche, poussière)
+
+### Module 2 : FanStability
+
+Détecte le "fan hunting" (oscillation des ventilateurs) :
+
+```julia
+# Conditions de détection:
+|dT/dt| < 0.1°C/s      # Température stable
+variance(RPM) > 10000   # RPM instable
+```
+
+Le fan hunting indique un contrôleur PWM mal calibré ou un ventilateur défaillant.
+
+### Module 3 : PowerQuality
+
+Monitore la stabilité de l'alimentation :
+
+- **Vcore variance** : Alert si > 50mV de variation (régulation VRM)
+- **12V rail** : Alert si variation > 5% (PSU instable)
+
+### Module 4 : ThermalSaturation
+
+Prédit le temps avant throttling thermique :
+
+```julia
+# Extrapolation linéaire depuis EWMA
+time_to_throttle = (T_critical - T_current) / (dT/dt)
+
+# Détection de spike transient
+is_transient = d²T/dt² < 0  # Inflexion = pic transitoire
+```
+
+### Module 5 : WorkloadClassifier
+
+Adapte dynamiquement les seuils selon le workload détecté :
+
+| Workload | T_warning | T_critical | Description |
+|----------|-----------|------------|-------------|
+| IDLE | 50°C | 70°C | Seuils bas pour idle |
+| COMPUTE | 75°C | 90°C | Seuils hauts pour charge CPU |
+| GAMING | 80°C | 95°C | Seuils maximaux pour jeu |
+| IO_INTENSIVE | 60°C | 80°C | Seuils modérés |
+
+### Module 6 : BottleneckDetector
+
+Identifie la ressource limitante :
+
+```julia
+@enum Bottleneck begin
+    BOTTLENECK_NONE
+    BOTTLENECK_CPU
+    BOTTLENECK_GPU
+    BOTTLENECK_MEMORY
+    BOTTLENECK_DISK
+end
+
+# Calcul de severity (0-100%)
+severity = (usage - low_threshold) / (high_threshold - low_threshold)
+```
+
+---
+
+## Communication WebSocket
+
+### Protocol
+
+Le serveur WebSocket utilise le pattern **atomic snapshot** pour garantir la cohérence des données en environnement multi-thread.
+
+```
+Client                    Server
+   |                         |
+   |--- WebSocket Connect -->|
+   |<-- InitPayload ---------|  (Static info + history)
+   |                         |
+   |<-- UpdatePayload -------|  (1Hz updates)
+   |<-- UpdatePayload -------|
+   |        ...              |
+   |                         |
+   |--- ping --------------->|  (Heartbeat every 30s)
+   |<-- pong ----------------|
+   |                         |
+   |--- close -------------->|
+   |<-- shutdown ------------|
+```
+
+### InitPayload (Connexion)
+
+```typescript
+interface InitPayload {
+    type: "init";
+    static: StaticDTO;           // CPU model, cores, kernel, hostname
+    disks: DiskDTO[];            // Disk configurations
+    history: HistoryDTO;         // Last 120 samples
+    timestamp: number;
+}
+```
+
+### UpdatePayload (1Hz)
+
+```typescript
+interface UpdatePayload {
+    type: "update";
+    cpu: CPUInstant;
+    memory: MemoryInstant;
+    gpu: GPUInstant | null;
+    network: NetworkInstant;
+    disks: DiskInstant[];
+    battery: BatteryInstant;
+    system: SystemInstant;
+    anomaly: AnomalyInstant;
+    top_processes: ProcessInstant[];
+    hardware_health: HardwareHealthDTO | null;
+    cognitive: CognitiveInsightsDTO | null;
+    full_sensors: FullSensorsDTO | null;
+    physics_diagnostics: PhysicsDiagnosticsDTO | null;
+    update_count: number;
+    timestamp: number;
+}
+```
+
+### Sécurité
+
+| Feature | Configuration |
+|---------|---------------|
+| **MAX_CLIENTS** | 50 (DoS protection) |
+| **Rate Limiting** | 10 messages/seconde par client |
+| **Send Timeout** | 5 secondes |
+| **CORS** | Configurable via `OMNI_CORS_ORIGINS` |
+
+---
+
+## Interface Web (Frontend)
+
+### Stack Technique
+
+| Technologie | Version | Usage |
+|-------------|---------|-------|
+| **React** | 19.2 | UI Framework |
+| **TypeScript** | 5.9 | Type Safety |
+| **Zustand** | 5.0 | State Management |
+| **Vite** | 7.2 | Build Tool |
+| **Three.js** | 0.182 | 3D Graphics |
+| **React Three Fiber** | 9.5 | React + Three.js |
+| **Recharts** | 3.6 | Charts |
+| **dnd-kit** | 6.3 | Drag & Drop |
+| **Tailwind CSS** | 3.4 | Styling |
+| **Lucide** | 0.562 | Icons |
+
+### Architecture des Widgets
+
+```
+src/features/
+├── dashboard/
+│   ├── components/
+│   │   ├── DashboardGrid.tsx      # Grid DnD principal
+│   │   └── SortableWidget.tsx     # Wrapper draggable
+│   └── config/
+│       └── widgetRegistry.ts      # Définitions widgets
+├── monitoring/
+│   ├── cpu/CpuWidget.tsx
+│   ├── memory/MemoryWidget.tsx
+│   ├── network/NetworkWidget.tsx
+│   ├── ai/
+│   │   ├── AnomalyWidget.tsx      # Scores d'anomalie
+│   │   └── CognitiveWidget.tsx    # Insights IA avancés
+│   ├── hardware/
+│   │   ├── SensorsWidget.tsx      # Températures
+│   │   ├── FansWidget.tsx         # Ventilateurs
+│   │   ├── VoltagesWidget.tsx     # Voltages
+│   │   └── HardwareHealthCard.tsx # Santé hardware
+│   └── history/HistoryWidget.tsx  # Graphiques historiques
+├── digital-twin/
+│   ├── DigitalTwinWidget.tsx      # Container 3D
+│   └── components/
+│       ├── Scene.tsx              # Canvas Three.js
+│       └── TowerModel.tsx         # Modèle PC animé
+└── physics/
+    └── PhysicsDiagnosticsWidget.tsx  # Diagnostics physiques
+```
+
+### State Management (Zustand)
+
+```typescript
+// telemetryStore.ts
+interface OmniState {
+    status: 'disconnected' | 'connecting' | 'connected' | 'error';
+    staticInfo: InitPayload | null;
+    liveData: UpdatePayload | null;
+    _historyBuffer: RingBuffer<HistoryPoint>;  // O(1) push
+    historyVersion: number;  // Trigger React re-renders
+    
+    connect: (url?: string) => void;
+    disconnect: () => void;
+    getHistory: () => HistoryPoint[];
+}
+
+// Atomic selectors pour éviter les re-renders inutiles
+const selectors = {
+    cpuLoad: (s) => s.liveData?.cpu.load1 ?? 0,
+    cpuTemp: (s) => s.liveData?.cpu.temp_package ?? 0,
+    // ...
+};
+```
+
+---
+
+## Installation
+
+### Prérequis
+
+- **Julia 1.9+** : [julialang.org/downloads](https://julialang.org/downloads/)
+- **Node.js 18+** : [nodejs.org](https://nodejs.org/)
+- **Linux** : Kernel 4.x+ avec `/proc` et `/sys` montés
+- **nvidia-smi** (optionnel) : Pour le monitoring GPU NVIDIA
+
+### Installation Backend
+
+```bash
+# Cloner le dépôt
+git clone https://github.com/zakatsuky/ai_dashboard.git
+cd ai_dashboard/back-end
+
+# Installer les dépendances Julia
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+# Lancer le backend
+julia --project=. main.jl
+```
+
+### Installation Frontend
+
+```bash
+cd ai_dashboard/front-end
+
+# Installer les dépendances
+npm install
+
+# Mode développement
+npm run dev
+
+# Build production
+npm run build
+```
+
+### Accès
+
+- **Backend TUI** : Terminal où Julia est lancé
+- **WebSocket** : `ws://localhost:8080/ws`
+- **Frontend Dev** : `http://localhost:5173`
+- **Frontend Prod** : Servir `front-end/dist/`
+
+---
+
+## Configuration
+
+Toute la configuration est centralisée dans `config/Config.jl` et chargeable via variables d'environnement ou fichier `.env`.
+
+### Variables d'Environnement
+
+#### Application
+
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `OMNI_REFRESH_INTERVAL` | `1.0` | Intervalle de collecte (secondes) |
+| `OMNI_ENABLE_GPU` | `true` | Activer monitoring GPU |
+| `OMNI_ENABLE_BATTERY` | `true` | Activer monitoring batterie |
+| `OMNI_ENABLE_PROCESSES` | `true` | Activer liste processus |
+
+#### Serveur WebSocket
+
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `OMNI_WEBSOCKET_PORT` | `8080` | Port du serveur |
+| `OMNI_WEBSOCKET_HOST` | `0.0.0.0` | Interface d'écoute |
+| `OMNI_MAX_CLIENTS` | `50` | Limite de clients |
+| `OMNI_CORS_ORIGINS` | `["*"]` | Origines CORS autorisées |
+
+#### Intelligence Artificielle
+
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `OMNI_AI_CPU_CRITICAL` | `95.0` | Seuil CPU critique (%) |
+| `OMNI_AI_ZSCORE_WARNING` | `2.5` | Z-Score pour warning |
+| `OMNI_AI_ZSCORE_CRITICAL` | `3.5` | Z-Score pour critical |
+| `OMNI_AI_CUSUM_THRESHOLD` | `5.0` | Seuil CUSUM |
+| `OMNI_AI_HW_ALPHA` | `0.3` | Holt-Winters alpha |
+| `OMNI_AI_SATURATION_KNEE_RATIO` | `0.8` | Point de knee (80%) |
+
+#### Physics Engine
+
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `OMNI_THERMAL_EFF_ALERT_PCT` | `15.0` | Seuil dégradation thermique (%) |
+| `OMNI_RPM_VAR_HUNTING` | `10000.0` | Variance RPM pour fan hunting |
+| `OMNI_VCORE_VAR_ALERT_MV` | `50.0` | Variance Vcore pour alert (mV) |
+| `OMNI_T_CRITICAL` | `95.0` | Température critique (°C) |
+
+### CLI Options
+
+```bash
+julia main.jl [options]
+
+Options:
+    --help, -h      Afficher l'aide
+    --once          Une seule itération (debug)
+    --no-gpu        Désactiver monitoring GPU
+    --no-battery    Désactiver monitoring batterie
+    --no-processes  Désactiver liste processus
+    --port PORT     Port WebSocket (défaut: 8080)
+```
 
 ---
 
@@ -353,41 +624,95 @@ Le **point de knee** (genou) est le seuil à partir duquel les performances se d
 
 ```
 ai_dashboard/
-├── README.md                 # Ce fichier
-├── back-end/
-│   ├── main.jl              # Point d'entrée (207 lignes)
-│   ├── Project.toml         # Dépendances Julia
-│   ├── Manifest.toml        # Versions verrouillées
+├── README.md
+│
+├── back-end/                          # Backend Julia
+│   ├── main.jl                        # Point d'entrée (260 lignes)
+│   ├── Project.toml                   # Dépendances Julia
+│   ├── Manifest.toml                  # Versions lockées
+│   ├── .env                           # Configuration locale
+│   │
+│   ├── config/
+│   │   └── Config.jl                  # Configuration centralisée (205 lignes)
 │   │
 │   ├── types/
-│   │   └── MonitorTypes.jl  # Structures de données (621 lignes)
+│   │   └── MonitorTypes.jl            # Structures de données (700+ lignes)
+│   │
+│   ├── server/
+│   │   └── WebSocketServer.jl         # Serveur WebSocket (1128 lignes)
 │   │
 │   ├── ui/
-│   │   └── UI.jl            # Interface TUI (1034 lignes)
+│   │   └── UI.jl                      # Interface TUI terminal
 │   │
 │   ├── helpers/
-│   │   └── debug.jl         # Utilitaires de diagnostic (167 lignes)
+│   │   └── debug.jl                   # Utilitaires debug
+│   │
+│   ├── utils/
+│   │   └── watchdog.sh                # Script supervision
 │   │
 │   └── OS/
-│       ├── Linux/           # Collecteurs Linux (2539 lignes)
-│       │   ├── AI.jl        # Moteur IA (897 lignes) ★
-│       │   ├── CPU.jl       # CPU, température, fréquences (380 lignes)
-│       │   ├── Memory.jl    # RAM, swap, composition (129 lignes)
-│       │   ├── GPU.jl       # NVIDIA via nvidia-smi (248 lignes)
-│       │   ├── Network.jl   # Interfaces, TCP stats (279 lignes)
-│       │   ├── DiskIO.jl    # IOPS, débit, latence (159 lignes)
-│       │   ├── DiskSpace.jl # Points de montage (190 lignes)
-│       │   ├── Processes.jl # Top processus (176 lignes)
-│       │   ├── Battery.jl   # État batterie (150 lignes)
-│       │   └── SystemUtils.jl # Uptime, PSI, OOM (121 lignes)
-│       │
-│       ├── Windows/         # (Préparé, non implémenté)
-│       └── MacOS/           # (Préparé, non implémenté)
+│       └── Linux/
+│           ├── CPU.jl                 # Collecteur CPU (380 lignes)
+│           ├── Memory.jl              # Collecteur mémoire
+│           ├── GPU.jl                 # Collecteur GPU
+│           ├── Network.jl             # Collecteur réseau
+│           ├── DiskIO.jl              # Collecteur I/O disque
+│           ├── DiskSpace.jl           # Collecteur espace disque
+│           ├── Processes.jl           # Collecteur processus
+│           ├── Battery.jl             # Collecteur batterie
+│           ├── SystemUtils.jl         # Utilitaires système
+│           ├── Hardware.jl            # Collecteur hardware sensors
+│           ├── AI.jl                  # ★ Moteur IA principal (978 lignes)
+│           └── ai/
+│               ├── IsolationForest.jl # Isolation Forest streaming (307 lignes)
+│               ├── Spectral.jl        # Analyse FFT (243 lignes)
+│               ├── Behavioral.jl      # Analyse Markov (302 lignes)
+│               ├── Physical.jl        # Cohérence physique
+│               ├── Simulation.jl      # Simulations thermiques
+│               └── PhysicsEngine.jl   # ★ Physics Engine (808 lignes)
 │
-└── .git/                    # Historique Git
+└── front-end/                         # Frontend React
+    ├── package.json
+    ├── vite.config.ts
+    ├── tailwind.config.js
+    ├── tsconfig.json
+    │
+    ├── src/
+    │   ├── App.tsx                    # Composant racine
+    │   ├── main.tsx                   # Point d'entrée React
+    │   ├── index.css                  # Styles globaux
+    │   │
+    │   ├── types/
+    │   │   └── omni.d.ts              # Types TypeScript (mirroir DTOs)
+    │   │
+    │   ├── store/
+    │   │   ├── telemetryStore.ts      # Zustand store WebSocket
+    │   │   └── preferencesStore.ts    # Préférences utilisateur
+    │   │
+    │   ├── lib/
+    │   │   ├── utils.ts               # cn() helper
+    │   │   └── formatters.ts          # formatBytes, etc.
+    │   │
+    │   ├── shared/components/
+    │   │   ├── ui/                    # shadcn/ui components
+    │   │   ├── ThemeToggle.tsx
+    │   │   └── ErrorBoundary.tsx
+    │   │
+    │   ├── components/
+    │   │   ├── dashboard/             # Cards spécifiques
+    │   │   └── charts/                # MetricChart, CpuHeatmap
+    │   │
+    │   └── features/
+    │       ├── dashboard/             # DashboardGrid, widgetRegistry
+    │       ├── monitoring/            # Widgets de monitoring
+    │       ├── digital-twin/          # Modèle 3D Three.js
+    │       └── physics/               # Widget Physics Engine
+    │
+    └── dist/                          # Build production
 ```
 
-**Total** : ~4758 lignes de code Julia
+**Total Backend** : ~5500 lignes Julia  
+**Total Frontend** : ~4000 lignes TypeScript/React
 
 ---
 
@@ -395,111 +720,67 @@ ai_dashboard/
 
 ### MonitorTypes.jl
 
-Définit toutes les structures de données du système :
-
-| Structure | Rôle |
-|-----------|------|
-| `SystemMonitor` | État global racine contenant tous les sous-systèmes |
-| `CPUInfo` | Modèle, fréquences, load, température, context switches |
-| `MemoryInfo` | RAM, swap, composition, huge pages, pression |
-| `GPUInfo` | Nom, utilisation, VRAM, température, puissance, throttling |
+| Structure | Description |
+|-----------|-------------|
+| `SystemMonitor` | État global contenant tous les sous-systèmes |
+| `CPUInfo` | Modèle, fréquences, load, température, PSI |
+| `MemoryInfo` | RAM, swap, pression |
+| `GPUInfo` | Nom, utilisation, VRAM, température, throttling |
 | `NetworkInfo` | Interfaces, débits, TCP stats |
 | `DiskUsage` | Points de montage, espace |
 | `DiskIOMetrics` | IOPS, débit, latence, queue depth |
-| `ProcessInfo` | PID, nom, CPU%, mémoire, état, I/O |
-| `BatteryInfo` | Pourcentage, état, puissance, santé |
-| `AnomalyScore` | Scores IA par métrique, tendances, spikes, prédictions |
-| `MetricHistory` | Buffer circulaire + EMA baselines |
-| `EMATracker` | Moyenne mobile exponentielle |
-| `RateTracker` | Calcul de taux (delta/time) |
-| `StaticCache` | Données invariantes (modèle CPU, hostname) |
+| `ProcessInfo` | PID, nom, CPU%, mémoire, état |
+| `BatteryInfo` | Pourcentage, état, puissance |
+| `FullSensors` | Tous les capteurs hwmon agrégés |
+| `AnomalyScore` | Scores IA, tendances, spikes, prédictions |
+| `HardwareHealth` | Diagnostic hardware synthétisé |
 
 ### AI.jl
 
-Le cœur de l'intelligence artificielle :
+| Composant | Description |
+|-----------|-------------|
+| `TDigest` | Centiles streaming |
+| `WelfordStats` | Variance en ligne |
+| `MADTracker` | Z-Score robuste |
+| `HoltWinters` | Triple lissage exponentiel |
+| `ADWIN` | Détection changement régime |
+| `CUSUM` | Détection dérive |
+| `PhysicalCoherence` | Corrélations CPU↔Temp, IO↔Latence |
+| `MetricTracker` | Agrégateur par métrique |
+| `AIState` | État global IA (singleton) |
 
-| Composant | Lignes | Description |
-|-----------|--------|-------------|
-| `TDigest` | 50-125 | Centiles en streaming |
-| `WelfordStats` | 130-175 | Variance en ligne |
-| `MADTracker` | 180-210 | Z-Score robuste |
-| `HoltWinters` | 215-270 | Prévision triple lissage |
-| `ADWIN` | 275-350 | Détection changement régime |
-| `CUSUM` | 350-385 | Détection dérive |
-| `PhysicalCoherence` | 390-430 | Corrélations matérielles |
-| `SaturationModel` | 435-455 | Loi de Little |
-| `AdaptiveSampler` | 460-510 | Fréquence adaptative |
-| `MetricTracker` | 515-600 | Agrégateur par métrique |
-| `AIState` | 605-670 | État global IA |
-| Score functions | 675-760 | Calcul des scores |
-| Predictions | 760-805 | Prédictions time-to-critical |
-| Alerts | 810-870 | Génération d'alertes |
+### PhysicsEngine.jl
 
-### UI.jl
-
-Rendu terminal avancé :
-
-| Section | Lignes | Description |
-|---------|--------|-------------|
-| Terminal control | 25-50 | Curseur, clear, ANSI |
-| UTF-8 handling | 55-100 | safe_truncate, visual_width |
-| Colors | 100-135 | Palette ANSI 16 couleurs |
-| Formatting | 155-185 | fmt_bytes, fmt_rate, fmt_duration |
-| Visual components | 190-280 | progress_bar, sparkline, heatmap |
-| Box drawing | 285-335 | Bordures Unicode |
-| Panel builders | 340-615 | CPU, MEM, GPU, NET, DISK, PROC |
-| Anomaly panel | 615-660 | Affichage scores IA |
-| Analytics panel | 665-780 | Z-scores, régimes, percentiles |
-| Saturation panel | 780-825 | Modèle saturation |
-| Alert ticker | 825-850 | Notifications scrollantes |
-| Main render | 860-1035 | Layout adaptatif, double-buffering |
-
----
-
-## Personnalisation
-
-### Configuration
-
-Modifier les constantes dans `main.jl` :
-
-```julia
-const CONFIG = (
-    refresh_interval = 0.5,    # Secondes entre updates
-    enable_gpu = true,         # Monitoring GPU
-    enable_battery = true,     # Monitoring batterie
-    enable_processes = true,   # Liste des processus
-    max_iterations = nothing,  # nothing = infini
-)
-```
-
-### Seuils IA
-
-Modifier `AI_CONFIG` dans `AI.jl` :
-
-```julia
-const AI_CONFIG = (
-    cpu_critical = 95.0,           # Seuil alerte CPU
-    mem_critical = 95.0,           # Seuil alerte mémoire
-    temp_critical = 95.0,          # Seuil alerte température
-    zscore_warning = 2.5,          # Z-score pour warning
-    zscore_critical = 3.5,         # Z-score pour critical
-    cusum_threshold = 5.0,         # Seuil CUSUM
-    saturation_knee_ratio = 0.8,   # Point de knee (80%)
-    # ...
-)
-```
-
-### Filtrage Réseau
-
-Modifier `is_excluded_iface()` dans `Network.jl` pour inclure/exclure des interfaces.
-
-### Filtrage Disques
-
-Modifier `is_relevant_mount()` dans `DiskSpace.jl` pour choisir les points de montage affichés.
+| Module | Responsabilité |
+|--------|---------------|
+| `ThermalEfficiencyModule` | Résistance thermique, dégradation |
+| `FanStabilityModule` | Variance RPM, hunting |
+| `PowerQualityModule` | Vcore, 12V stability |
+| `ThermalSaturationModule` | Time-to-throttle |
+| `WorkloadClassifierModule` | Seuils dynamiques |
+| `BottleneckDetectorModule` | Resource limiting |
 
 ---
 
 ## Dépannage
+
+### "WebSocket connection failed"
+
+**Causes** :
+1. Backend pas démarré
+2. Port bloqué par firewall
+3. URL incorrecte dans le frontend
+
+**Solution** :
+```bash
+# Vérifier que le backend tourne
+curl -i http://localhost:8080/
+
+# Vérifier le port
+ss -tlnp | grep 8080
+
+# Frontend: vérifier VITE_WS_URL dans .env
+```
 
 ### "No network interfaces"
 
@@ -507,73 +788,67 @@ Modifier `is_relevant_mount()` dans `DiskSpace.jl` pour choisir les points de mo
 
 **Solution** :
 ```bash
-# Vérifier les interfaces disponibles
 cat /proc/net/dev
-# Modifier is_excluded_iface() si nécessaire
+# Modifier is_excluded_iface() dans Network.jl si nécessaire
 ```
 
 ### "No NVIDIA GPU detected"
 
-**Causes possibles** :
-1. `nvidia-smi` non installé ou non dans le PATH
+**Causes** :
+1. `nvidia-smi` non installé ou pas dans PATH
 2. Driver NVIDIA non chargé
 
 **Solution** :
 ```bash
-# Vérifier nvidia-smi
 which nvidia-smi
 nvidia-smi
-
-# Si absent, installer le driver NVIDIA
+# Si absent, installer le driver propriétaire
 ```
 
-### "No disk IO data"
+### Frontend: "Cannot read property of null"
 
-**Cause** : Aucun disque valide trouvé (nvme, sd, vd).
+**Cause** : Données pas encore reçues du backend.
 
-**Solution** :
-```bash
-# Vérifier les disques
-cat /proc/diskstats | grep -E "nvme|sd|vd"
-lsblk
-```
+**Solution** : Ajouter des null checks dans les composants ou utiliser les atomic selectors avec valeurs par défaut.
 
-### Erreur StringIndexError
+### Rendu 3D saccadé
 
-**Cause** : Indexation UTF-8 incorrecte sur des chaînes avec caractères multi-octets.
+**Cause** : Conflit entre autoRotate et frame loop manuel.
 
-**Solution** : Mise à jour vers la dernière version (corrigé avec `safe_truncate()`).
-
-### Affichage cassé / scintillement
-
-**Causes** :
-1. Terminal trop étroit (< 80 colonnes)
-2. Émulateur de terminal non compatible ANSI
-
-**Solution** :
-```bash
-# Agrandir le terminal
-# Utiliser un terminal moderne (gnome-terminal, kitty, alacritty)
-```
+**Solution** : Mise à jour du `Scene.tsx` avec `UnifiedFrameController` (voir corrections de performance).
 
 ---
 
 ## Roadmap
 
-### Version 3.1 (Prévue)
+### Version 2.1 (En cours)
+- [x] Physics Engine avec 6 modules diagnostics
+- [x] Digital Twin 3D avec animation ventilateurs
+- [x] Isolation Forest streaming
+- [x] Analyse spectrale FFT
+- [x] Analyse comportementale Markov
 - [ ] Export JSON/CSV des métriques
 - [ ] Mode headless (sans TUI)
-- [ ] Configuration via fichier YAML
 
-### Version 3.2 (Prévue)
+### Version 2.2 (Planifié)
 - [ ] Support AMD GPU (via rocm-smi)
 - [ ] Support Intel GPU (via intel_gpu_top)
-- [ ] Alertes par webhook (Slack, Discord)
+- [ ] Alertes webhook (Slack, Discord)
+- [ ] Persistance des préférences utilisateur
 
-### Version 4.0 (Future)
+### Version 3.0 (Futur)
 - [ ] Support Windows (WMI, Performance Counters)
 - [ ] Support macOS (IOKit, sysctl)
-- [ ] Interface web optionnelle (WebSocket + React)
-- [ ] Modèles ML pour prédiction avancée
+- [ ] Authentification WebSocket
+- [ ] Mode cluster (multi-machines)
+- [ ] Modèles ML prédictifs avancés
 
 ---
+
+## Licence
+
+MIT License - Copyright (c) 2025
+
+---
+
+*LYRA - Intelligent System Monitoring*
