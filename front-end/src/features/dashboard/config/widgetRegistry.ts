@@ -58,13 +58,6 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
         component: lazy(() => import('@/features/monitoring/hardware/HardwareHealthCard').then(m => ({ default: m.HardwareHealthCard }))),
         defaultSize: { w: 1, h: 1 }
     },
-    'sensors': {
-        id: 'sensors',
-        title: 'Sensors',
-        description: 'Voltage and Fan speed readings',
-        component: lazy(() => import('@/features/monitoring/hardware/SensorsWidget').then(m => ({ default: m.SensorsWidget }))),
-        defaultSize: { w: 1, h: 1 }
-    },
     'cognitive': {
         id: 'cognitive',
         title: 'Cognitive Engine',

@@ -35,14 +35,13 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
     { id: 'physics-diagnostics', type: 'physics-diagnostics', position: 8, isVisible: true },
     // Legacy hardware widgets (can be hidden in favor of new ones)
     { id: 'hardware-health', type: 'hardware-health', position: 9, isVisible: true },
-    { id: 'sensors', type: 'sensors', position: 10, isVisible: false },  // Hidden - replaced by fans/voltages
-    { id: 'cognitive', type: 'cognitive', position: 11, isVisible: true },
-    { id: 'history', type: 'history', position: 12, isVisible: true },
-    { id: 'digital-twin', type: 'digital-twin', position: 13, isVisible: true },
+    { id: 'cognitive', type: 'cognitive', position: 10, isVisible: true },
+    { id: 'history', type: 'history', position: 11, isVisible: true },
+    { id: 'digital-twin', type: 'digital-twin', position: 12, isVisible: true },
 ];
 
 // Version pour forcer la mise à jour du localStorage si les widgets par défaut changent
-const WIDGET_LAYOUT_VERSION = 3;
+const WIDGET_LAYOUT_VERSION = 4;
 
 export const usePreferencesStore = create<PreferencesState>()(
     persist(

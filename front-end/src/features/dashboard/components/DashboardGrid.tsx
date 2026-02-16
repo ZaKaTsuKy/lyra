@@ -19,12 +19,32 @@ import { Skeleton } from '@/shared/components/ui/skeleton';
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
 import { getWidgetDefinition } from '../config/widgetRegistry';
 
+/**
+ * ✅ ENHANCED DASHBOARD GRID
+ * 
+ * Now respects widget defaultSize from the registry:
+ * - w: 1 = 1 column span
+ * - w: 2 = 2 column span (spans md:col-span-2)
+ * - h: 2 = 2 row span (spans row-span-2)
+ */
+
+// Map size values to Tailwind classes
+function getSpanClasses(w: number, h: number): string {
+    const colSpan = w >= 2 ? 'md:col-span-2' : '';
+    const rowSpan = h >= 2 ? 'row-span-2' : '';
+    return `${colSpan} ${rowSpan}`.trim();
+}
+
 export function DashboardGrid() {
     const widgets = usePreferencesStore((s) => s.widgets);
     const moveWidget = usePreferencesStore((s) => s.moveWidget);
 
     const sensors = useSensors(
-        useSensor(PointerSensor),
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8, // Prevent accidental drags
+            },
+        }),
         useSensor(KeyboardSensor, {
             coordinateGetter: sortableKeyboardCoordinates,
         })
@@ -54,18 +74,27 @@ export function DashboardGrid() {
                 items={widgetIds}
                 strategy={rectSortingStrategy}
             >
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 auto-rows-[minmax(200px,auto)]">
-                    {visibleWidgets.map((widget) => {
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 auto-rows-[minmax(180px,auto)]">
+                    {visibleWidgets.map((widget, index) => {
                         const def = getWidgetDefinition(widget.type);
 
                         if (!def) return null;
 
                         const Component = def.component;
+                        const { w = 1, h = 1 } = def.defaultSize;
+                        const spanClasses = getSpanClasses(w, h);
 
                         return (
-                            <SortableWidget key={widget.id} id={widget.id}>
+                            <SortableWidget
+                                key={widget.id}
+                                id={widget.id}
+                                className={spanClasses}
+                                animationDelay={index * 0.05}
+                            >
                                 <ErrorBoundary>
-                                    <Suspense fallback={<Skeleton className="h-full w-full rounded-xl" />}>
+                                    <Suspense fallback={
+                                        <Skeleton className="h-full w-full rounded-xl animate-pulse" />
+                                    }>
                                         <Component />
                                     </Suspense>
                                 </ErrorBoundary>
